@@ -1,11 +1,5 @@
-"""
-ТЕСТОВЫЙ БОТ ДЛЯ ОДНОРАЗОВЫХ ССЫЛОК (на 1 человека)
-"""
-
-import os
-import asyncio
-import sqlite3
 from datetime import datetime
+from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -13,12 +7,25 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# ========== НАСТРОЙКИ ==========
-BOT_TOKEN = "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0"  # ЗАМЕНИ!
-ADMIN_ID = 8559381302  # ТВОЙ ID
+# ========== FLASK ДЛЯ RENDER ==========
+flask_app = Flask(__name__)
 
-# КАНАЛ ДЛЯ ТЕСТА
-TEST_CHANNEL_ID = "-1003773134695"  # ЗАМЕНИ НА СВОЙ КАНАЛ!
+@flask_app.route('/')
+def home():
+    return "🤖 Бот работает!"
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+@flask_app.route('/ping')
+def ping():
+    return "pong", 200
+
+# ========== НАСТРОЙКИ БОТА ==========
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0")
+ADMIN_ID = 8559381302
+TEST_CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003773134695")
 
 # ========== БАЗА ДАННЫХ ==========
 DB_PATH = "test_users.db"
@@ -26,14 +33,12 @@ DB_PATH = "test_users.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             balance INTEGER DEFAULT 10
         )
     ''')
-    
     c.execute('''
         CREATE TABLE IF NOT EXISTS paid_tariffs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +47,6 @@ def init_db():
             paid_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
     conn.commit()
     conn.close()
     print("✅ База данных создана")
@@ -53,7 +57,6 @@ def get_balance(user_id):
     c.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     result = c.fetchone()
     conn.close()
-    
     if result:
         return result[0]
     else:
@@ -91,13 +94,12 @@ def is_tariff_paid(user_id, tariff_name):
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-# ========== ФУНКЦИЯ СОЗДАНИЯ ССЫЛКИ ДЛЯ 1 ЧЕЛОВЕКА ==========
+# ========== ФУНКЦИЯ СОЗДАНИЯ ССЫЛКИ ==========
 async def create_one_time_link(chat_id: str) -> str:
-    """Создаёт ссылку ТОЛЬКО ДЛЯ 1 ЧЕЛОВЕКА!"""
     try:
         invite_link = await bot.create_chat_invite_link(
             chat_id=chat_id,
-            member_limit=1,  # ⭐ ТОЛЬКО 1 ЧЕЛОВЕК! Ссылка умрёт после перехода
+            member_limit=1,
             creates_join_request=False
         )
         return invite_link.invite_link
@@ -130,10 +132,9 @@ async def cmd_start(message: Message):
 1. Тариф стоит 1 RUB (виртуальный)
 2. После оплаты ты получишь ссылку в канал
 3. Ссылка работает ДЛЯ ОДНОГО ЧЕЛОВЕКА
-4. После перехода ссылка ДЕАКТИВИРУЕТСЯ навсегда
-5. Ссылка НЕ имеет ограничения по времени
+4. После перехода ссылка ДЕАКТИВИРУЕТСЯ
 
-💡 Это тестовый режим для проверки системы выдач!
+💡 Тестовый режим!
 """
     
     await message.answer(text, reply_markup=get_main_keyboard())
@@ -151,11 +152,9 @@ async def buy_access(callback: CallbackQuery):
         await callback.answer("❌ Ты уже покупал этот тариф!", show_alert=True)
         return
     
-    # Списываем 1 рубль
     deduct_balance(user_id, 1)
     add_paid_tariff(user_id, "test_access")
     
-    # Создаём ссылку ДЛЯ 1 ЧЕЛОВЕКА
     link = await create_one_time_link(TEST_CHANNEL_ID)
     
     if not link:
@@ -178,9 +177,6 @@ async def buy_access(callback: CallbackQuery):
 ⚠️ <b>ВАЖНО!</b>
 • Ссылка ТОЛЬКО ДЛЯ 1 ЧЕЛОВЕКА
 • После перехода ссылка ДЕАКТИВИРУЕТСЯ
-• Ссылка НЕ имеет ограничения по времени
-
-✅ <b>Спасибо за покупку!</b>
 """
     
     await callback.message.edit_text(text, reply_markup=get_main_keyboard())
@@ -192,9 +188,7 @@ async def show_balance(callback: CallbackQuery):
     balance = get_balance(user_id)
     
     await callback.message.edit_text(
-        f"💰 <b>Твой баланс:</b> {balance} RUB\n\n"
-        f"💡 Тариф стоит 1 RUB\n"
-        f"📌 Нажми «Купить доступ» чтобы проверить работу ссылок",
+        f"💰 <b>Твой баланс:</b> {balance} RUB",
         reply_markup=get_main_keyboard()
     )
     await callback.answer()
@@ -246,17 +240,24 @@ async def cmd_add_money(message: Message):
     conn.close()
     await message.answer("✅ Баланс пополнен до 10 RUB!")
 
+# ========== ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ ==========
+def run_bot():
+    asyncio.run(dp.start_polling(bot))
+
 # ========== ЗАПУСК ==========
-async def main():
+if __name__ == "__main__":
     init_db()
     print("=" * 60)
-    print("🚀 ТЕСТОВЫЙ БОТ ЗАПУЩЕН!")
-    print(f"📢 Канал для теста: {TEST_CHANNEL_ID}")
-    print("💰 У каждого пользователя баланс 10 RUB")
-    print("💎 Тариф стоит 1 RUB")
-    print("🔗 Ссылки НА 1 ЧЕЛОВЕКА (деактивируются после перехода)")
+    print("🚀 ТЕСТОВЫЙ БОТ ЗАПУЩЕН (Web Service)")
+    print(f"📢 Канал: {TEST_CHANNEL_ID}")
+    print("💰 Баланс: 10 RUB | Тариф: 1 RUB")
+    print("🔗 Ссылки НА 1 ЧЕЛОВЕКА")
     print("=" * 60)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    
+    # Запускаем бота в фоновом потоке
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Запускаем Flask для Render
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
