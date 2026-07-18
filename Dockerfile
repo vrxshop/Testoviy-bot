@@ -2,12 +2,15 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Копируем зависимости
+# Устанавливаем системные зависимости, которые могут понадобиться
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+
+# Копируем зависимости и устанавливаем их
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем код
+# Копируем весь код
 COPY . .
 
-# Запуск
+# Запускаем бота
 CMD ["python", "app.py"]
