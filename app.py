@@ -37,7 +37,7 @@ def health():
 ROLLYPAY_API_KEY = "z39_r_COJdiB7PWeddOYvzT2rx4cjIbS1m4JJcgBTi0"
 ROLLYPAY_CALLBACK_URL = "https://t-bot-18jz.onrender.com/webhook"
 
-BOT_TOKEN = "7753109639:AAE1ahFxsCb_KN5L7tIPrDgAltf0wPnuCmU"
+BOT_TOKEN = "8814729405:AAGY-xSVQmV0HUyXc_W72hXtjvlJ9sU7qVg"
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
 SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
@@ -175,6 +175,7 @@ LANG = {
         "payment_success": "✅ <b>Оплата прошла!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за покупку! ❤️",
         "payment_success_test": "✅ <b>Доступ открыт!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за использование бота! ❤️",
         "subs_list_item": "• {name} (оплачен ✅)",
+        "main_menu_text": "После выбора и оплаты тарифа бот автоматически тебе выдаст доступ на вход в группу. На случай потери ссылки на нашу випку, ты сможешь всегда её запросить повторно у бота, это бесплатно.\n\nНажми на тариф чтобы прочесть описание.\n\nКаждый канал отличается"
     },
     "en": {
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
@@ -209,6 +210,7 @@ LANG = {
         "payment_success": "✅ <b>Payment successful!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for your purchase! ❤️",
         "payment_success_test": "✅ <b>Access granted!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for using the bot! ❤️",
         "subs_list_item": "• {name} (paid ✅)",
+        "main_menu_text": "After selecting and paying for the tariff, the bot will automatically give you access to the group. If you lose the link to our VIP, you can always request it again from the bot, it's free.\n\nClick on the tariff to read the description.\n\nEach channel is different"
     }
 }
 
@@ -327,8 +329,8 @@ TARIFFS = {
         "desc_ru": "Cливaeм ccлыky дpyгиx кaнaлoв, peкoмeндyeм пoкyпaть пocлe пpocмoтpa дpyгиx тapифoв\n\nЕдинственный пак который не входит во всё включено"
     },
     "12": {
-        "name_ru": "🎭 αльтушkи 🦄",
-        "name_en": "🎭 Alt girls 🦄",
+        "name_ru": "·  Äльтушки👩‍🎤 (Hoвое)",
+        "name_en": "·  Alt girls👩‍🎤 (New)",
         "price_rub": 299,
         "price_stars": 250,
         "duration_ru": "1 месяц",
@@ -337,8 +339,8 @@ TARIFFS = {
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• αльтушkи (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл co cливaми αльтушeк, эмo, пaнkoв и дpyгиx нeфopмaлoв.\n\n❓Уpoвeнь? 14-20 лeт, coбpaны caмыe coчныe cливы нeфopмaлoк, ecть гpyппoвyшkи, инцecT, cкpытыe кaмepы, жecтkий ceкc.\n\n✅ Пoмимo видeo пpилaгaeтcя apхив c дoпoлнитeльным koнтeнтoм."
     },
     "13": {
-        "name_ru": "💀 Изн0cьl 🔥",
-        "name_en": "💀 Rapes 🔥",
+        "name_ru": "💀Premium Износьl (Новое)",
+        "name_en": "💀Premium Rapes (New)",
         "price_rub": 559,
         "price_stars": 500,
         "duration_ru": "1 месяц",
@@ -347,8 +349,8 @@ TARIFFS = {
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Изнocы (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмыми жecтkими видeo из**cилoв@ний.\n\n❓Уpoвeнь? 13-17, бывают и до 13, пoлныe видeo нacилия, инцecT, гpyппoвыe из**cилoв@ния, cкpытыe кaмepы, жecть.\n\n✅ также прилагается дополнительный к@нал"
     },
     "14": {
-        "name_ru": "🔥 Жecть 🩸",
-        "name_en": "🔥 Extreme 🩸",
+        "name_ru": "💯Жêçть (2-17 Jlet) (Новое)🩸",
+        "name_en": "💯Extreme (2-17 Years) (New)🩸",
         "price_rub": 599,
         "price_stars": 550,
         "duration_ru": "1 месяц",
@@ -357,8 +359,8 @@ TARIFFS = {
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Жecть (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмым жecтkим koнтeнтoм, чтo ecть в интepнeтe.\n\n❓Уpoвeнь? 14-20 лeт, кpoвь, yнижeния, бoль, экcтpим, мясo, гpyппoвyшkи, инцecT — вce caмoe жecтkoe."
     },
     "15": {
-        "name_ru": "📸 Cкpьlтыe к@мepы 🎥",
-        "name_en": "📸 Hidden cameras 🎥",
+        "name_ru": "🎞️ Скрьlтые к@меры🎥 (Новое)",
+        "name_en": "🎞️ Hidden cameras🎥 (New)",
         "price_rub": 499,
         "price_stars": 450,
         "duration_ru": "1 месяц",
@@ -367,8 +369,8 @@ TARIFFS = {
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Cкpытыe кaмepы (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл co cкpьIтыми кaмepaми из caмыx нeoжидaнныx мecт.\n\n❓Уpoвeнь? 13-18 лeт, paздeвaлkи, тyaлeты, дyшeвыe, cкpьIтыe кaмepы в шkoлax и yнивepcитeтax, бывают даже под партой, в вазе кабинета физрука, peaльныe cливы.\n\n✅ Пoмимo видeo пpилaгaeтcя apхив c дoпoлнитeльным koнтeнтoм."
     },
     "16": {
-        "name_ru": "🍻 Bпucкu 🥳",
-        "name_en": "🍻 Partys 🥳",
+        "name_ru": "🍻 Vпиçкu (Новое)🍾",
+        "name_en": "🍻 Partys (New)🍾",
         "price_rub": 349,
         "price_stars": 300,
         "duration_ru": "1 месяц",
@@ -552,7 +554,8 @@ async def cmd_start(message: Message, state: FSMContext):
     lang = await get_lang(state)
     user_name = message.from_user.first_name
     
-    text = f"""👋 Привет, {user_name}!
+    # ПЕРВОЕ СООБЩЕНИЕ (приветствие)
+    welcome_text = f"""👋 Привет, {user_name}!
 Ты попал в наш бот✅
 
 Нажимая на каждый тариф ты видишь краткое описание.
@@ -561,8 +564,11 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Тех.поддержка: @Nastia_sup"""
     
-    await message.answer(text, disable_web_page_preview=True)
-    await message.answer("Выберите тариф:", reply_markup=get_tariff_keyboard(lang))
+    await message.answer(welcome_text, disable_web_page_preview=True)
+    
+    # ВТОРОЕ СООБЩЕНИЕ (меню)
+    menu_text = LANG[lang]["main_menu_text"]
+    await message.answer(menu_text, reply_markup=get_tariff_keyboard(lang))
 
 @dp.message(Command("test67"))
 async def cmd_test67(message: Message, state: FSMContext):
@@ -634,7 +640,7 @@ async def process_lang_change(callback: CallbackQuery, state: FSMContext):
 @dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
 async def show_prices(message: Message, state: FSMContext):
     lang = await get_lang(state)
-    await message.answer("Выберите тариф:", reply_markup=get_tariff_keyboard(lang))
+    await message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
 async def show_subscriptions(message: Message, state: FSMContext):
@@ -664,13 +670,13 @@ async def show_subscriptions(message: Message, state: FSMContext):
 async def back_to_prices(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(state)
     await callback.answer()
-    await callback.message.edit_text("Выберите тариф:", reply_markup=get_tariff_keyboard(lang))
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.callback_query(F.data == "show_paki")
 async def show_paki(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(state)
     await callback.answer()
-    await callback.message.edit_text("Выберите пак:", reply_markup=get_paki_keyboard(lang))
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_paki_keyboard(lang))
 
 @dp.callback_query(F.data.startswith("tariff_"))
 async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
