@@ -37,7 +37,7 @@ def health():
 ROLLYPAY_API_KEY = "z39_r_COJdiB7PWeddOYvzT2rx4cjIbS1m4JJcgBTi0"
 ROLLYPAY_CALLBACK_URL = "https://t-bot-18jz.onrender.com/webhook"
 
-BOT_TOKEN = "8814729405:AAGY-xSVQmV0HUyXc_W72hXtjvlJ9sU7qVg"
+BOT_TOKEN = "7753109639:AAE1ahFxsCb_KN5L7tIPrDgAltf0wPnuCmU"
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
 SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
