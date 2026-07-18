@@ -18,7 +18,7 @@ def health():
     return "OK", 200
 
 # ========== НАСТРОЙКИ ==========
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ТВОЙ_ТОКЕН_СЮДА")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0")
 ADMIN_ID = 8559381302
 TEST_CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003773134695")
 
