@@ -23,9 +23,9 @@ def ping():
     return "pong", 200
 
 # ========== НАСТРОЙКИ БОТА ==========
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0")
+BOT_TOKEN = "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0"
 ADMIN_ID = 8559381302
-TEST_CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003773134695")
+TEST_CHANNEL_ID = "-1003773134695"
 
 # ========== БАЗА ДАННЫХ ==========
 DB_PATH = "test_users.db"
