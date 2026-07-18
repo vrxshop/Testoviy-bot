@@ -711,6 +711,9 @@ async def pay_test_tariff(callback: CallbackQuery, state: FSMContext):
 # ==================================================
 # ЗАПУСК
 # ==================================================
+# ==================================================
+# ЗАПУСК
+# ==================================================
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
@@ -722,15 +725,16 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-def run_bot():
-    asyncio.run(main())
+def run_flask():
+    """Запускает Flask в фоновом потоке"""
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
-    # Запускаем бота в фоновом потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    print("✅ Бот запущен в фоновом потоке!")
+    # Запускаем Flask в фоновом потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("✅ Flask запущен в фоновом потоке!")
 
-    # Запускаем Flask для Render
-    port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host="0.0.0.0", port=port)
+    # Бот запускаем в основном потоке
+    asyncio.run(main())
