@@ -1,13 +1,17 @@
+import os
+import asyncio
+import sqlite3
+import threading
 from datetime import datetime
-from flask import Flask, request, jsonify
-from aiogram import Bot, Dispatcher, types, F
+from flask import Flask
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# ========== FLASK ДЛЯ RENDER ==========
+# ========== FLASK ==========
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -18,14 +22,10 @@ def home():
 def health():
     return "OK", 200
 
-@flask_app.route('/ping')
-def ping():
-    return "pong", 200
-
-# ========== НАСТРОЙКИ БОТА ==========
-BOT_TOKEN = "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0"
+# ========== НАСТРОЙКИ ==========
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0")
 ADMIN_ID = 8559381302
-TEST_CHANNEL_ID = "-1003773134695"
+TEST_CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003773134695")
 
 # ========== БАЗА ДАННЫХ ==========
 DB_PATH = "test_users.db"
@@ -139,7 +139,7 @@ async def cmd_start(message: Message):
     
     await message.answer(text, reply_markup=get_main_keyboard())
 
-@dp.callback_query(F.data == "buy_access")
+@dp.callback_query(lambda c: c.data == "buy_access")
 async def buy_access(callback: CallbackQuery):
     user_id = callback.from_user.id
     balance = get_balance(user_id)
@@ -182,7 +182,7 @@ async def buy_access(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_main_keyboard())
     await callback.answer("✅ Доступ куплен!")
 
-@dp.callback_query(F.data == "show_balance")
+@dp.callback_query(lambda c: c.data == "show_balance")
 async def show_balance(callback: CallbackQuery):
     user_id = callback.from_user.id
     balance = get_balance(user_id)
@@ -193,7 +193,7 @@ async def show_balance(callback: CallbackQuery):
     )
     await callback.answer()
 
-@dp.callback_query(F.data == "show_purchases")
+@dp.callback_query(lambda c: c.data == "show_purchases")
 async def show_purchases(callback: CallbackQuery):
     user_id = callback.from_user.id
     
