@@ -14,7 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # ========== НАСТРОЙКИ ==========
-BOT_TOKEN = "8518870059:AAEAbeiOp07jtidHFlfyxVB1tgsMQIPXj40"  # ЗАМЕНИ!
+BOT_TOKEN = "8632640394:AAE0RQffAqNutiCS2Je1BUwdQBYybhbO1D0"  # ЗАМЕНИ!
 ADMIN_ID = 8559381302  # ТВОЙ ID
 
 # КАНАЛ ДЛЯ ТЕСТА
