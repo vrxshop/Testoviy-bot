@@ -5,29 +5,39 @@ import json
 import uuid
 import aiohttp
 import sqlite3
+import threading
 from datetime import datetime, timedelta
+from flask import Flask
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
-from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, CommandStart
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiohttp import web
+
+# ==================================================
+# FLASK ДЛЯ RENDER
+# ==================================================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "🤖 Бот работает!"
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
 
 # ==================================================
 # КОНФИГУРАЦИЯ
 # ==================================================
-ROLLYPAY_API_KEY = "z39_r_COJdiB7PWeddOYvzT2rx4cjIbS1m4JJcgBTi0"
-ROLLYPAY_CALLBACK_URL = "https://t-bot-18jz.onrender.com/webhook"
-
 BOT_TOKEN = "7753109639:AAE1ahFxsCb_KN5L7tIPrDgAltf0wPnuCmU"
+ADMIN_ID = 8559381302
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
-SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
-ADMIN_ID = 8559381302  # Твой Telegram ID
 
 # ==================================================
 # ID КАНАЛОВ
@@ -116,57 +126,7 @@ def is_tariff_paid(user_id: int, tariff_key: str):
         return False
 
 # ==================================================
-# ТЕКСТЫ И ТАРИФЫ
-# ==================================================
-LANG = {
-    "ru": {
-        "tariff_desc": "📋 <b>{name}</b>\n\n💰 Цена: {price_text}\nСрок доступа: {duration}\n\n{desc}",
-        "tariff_desc_paid": "📋 <b>{name}</b>\n\n💰 Цена: {price_text}\nСрок доступа: {duration}\n\n{desc}\n\n✅ <b>ТАРИФ ОПЛАЧЕН</b>",
-        "btn_promo": "🏷️ Ввести промокод",
-        "btn_pay": "💳 Способы оплаты",
-        "btn_back": "👈 НАЗАД",
-        "btn_pay_rub": "{price} RUB",
-        "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
-        "btn_pay_stars": "{price} STARS",
-        "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
-        "btn_goto_pay": "✅ ПЕРЕЙТИ К ОПЛАТЕ",
-        "btn_new_link": "🔗 Получить новую ссылку",
-        "btn_to_prices": "✅ КУПИТЬ ПОДПИСКУ",
-        "btn_cancel": "🚫 ОТМЕНА",
-        "btn_stars_go": "⭐ Stars со скидкой до 42%",
-        "payment_success": "✅ <b>Оплата прошла!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за покупку! ❤️",
-        "subs_list_item": "• {name} (оплачен ✅)",
-        "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите валюту для оплаты тарифа",
-        "pay_rub": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: RollyPay\n\n💰 Итоговая стоимость: {final} RUB\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\n✅ Счет на оплату сформирован!",
-        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@Nastia_sup</a>\n\nкурс:\n1 ⭐ - 1 рубль",
-        "payment_success_test": "✅ <b>Доступ открыт!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за использование бота! ❤️",
-    },
-    "en": {
-        "tariff_desc": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}",
-        "tariff_desc_paid": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}\n\n✅ <b>TARIFF PAID</b>",
-        "btn_promo": "🏷️ Enter promo code",
-        "btn_pay": "💳 Payment methods",
-        "btn_back": "👈 Back",
-        "btn_pay_rub": "{price} RUB",
-        "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
-        "btn_pay_stars": "{price} STARS",
-        "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
-        "btn_goto_pay": "✅ GO TO PAYMENT",
-        "btn_new_link": "🔗 Get new link",
-        "btn_to_prices": "✅ BUY SUBSCRIPTION",
-        "btn_cancel": "🚫 CANCEL",
-        "btn_stars_go": "⭐ Stars up to 42% off",
-        "payment_success": "✅ <b>Payment successful!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for your purchase! ❤️",
-        "subs_list_item": "• {name} (paid ✅)",
-        "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose a currency for payment",
-        "pay_rub": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: RollyPay\n\n💰 Total cost: {final} RUB\n\n🔒 You will get access to:\n• {project} (external link)\n\n✅ Invoice created!",
-        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@Nastia_sup</a>\n\nRate:\n1 ⭐ - 1 ruble",
-        "payment_success_test": "✅ <b>Access granted!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for using the bot! ❤️",
-    }
-}
-
-# ==================================================
-# ТАРИФЫ (С НОВЫМИ!)
+# ТАРИФЫ
 # ==================================================
 TARIFFS = {
     "1": {
@@ -252,7 +212,7 @@ TARIFFS = {
     "9": {
         "name_ru": "🩵Всё включено 2026💚",
         "name_en": "🩵All inclusive 2026💚",
-        "price_rub": 2999,  # ← ИЗМЕНЕНО!
+        "price_rub": 2999,
         "price_stars": 2500,
         "duration_ru": "Бессрочно",
         "duration_en": "Forever",
@@ -340,6 +300,54 @@ PROMO_CODES = {
     "HOMAKE40": 40,
     "BANK50": 50,
     "LOLIPOP80": 80
+}
+
+# ==================================================
+# ТЕКСТЫ
+# ==================================================
+LANG = {
+    "ru": {
+        "tariff_desc": "📋 <b>{name}</b>\n\n💰 Цена: {price_text}\nСрок доступа: {duration}\n\n{desc}",
+        "tariff_desc_paid": "📋 <b>{name}</b>\n\n💰 Цена: {price_text}\nСрок доступа: {duration}\n\n{desc}\n\n✅ <b>ТАРИФ ОПЛАЧЕН</b>",
+        "btn_promo": "🏷️ Ввести промокод",
+        "btn_pay": "💳 Способы оплаты",
+        "btn_back": "👈 НАЗАД",
+        "btn_pay_rub": "{price} RUB",
+        "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
+        "btn_pay_stars": "{price} STARS",
+        "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
+        "btn_goto_pay": "✅ ПЕРЕЙТИ К ОПЛАТЕ",
+        "btn_new_link": "🔗 Получить новую ссылку",
+        "btn_to_prices": "✅ КУПИТЬ ПОДПИСКУ",
+        "btn_cancel": "🚫 ОТМЕНА",
+        "btn_stars_go": "⭐ Stars со скидкой до 42%",
+        "payment_success": "✅ <b>Оплата прошла!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за покупку! ❤️",
+        "payment_success_test": "✅ <b>Доступ открыт!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за использование бота! ❤️",
+        "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите валюту для оплаты тарифа",
+        "pay_rub": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: RollyPay\n\n💰 Итоговая стоимость: {final} RUB\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\n✅ Счет на оплату сформирован!",
+        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@Nastia_sup</a>\n\nкурс:\n1 ⭐ - 1 рубль",
+    },
+    "en": {
+        "tariff_desc": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}",
+        "tariff_desc_paid": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}\n\n✅ <b>TARIFF PAID</b>",
+        "btn_promo": "🏷️ Enter promo code",
+        "btn_pay": "💳 Payment methods",
+        "btn_back": "👈 Back",
+        "btn_pay_rub": "{price} RUB",
+        "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
+        "btn_pay_stars": "{price} STARS",
+        "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
+        "btn_goto_pay": "✅ GO TO PAYMENT",
+        "btn_new_link": "🔗 Get new link",
+        "btn_to_prices": "✅ BUY SUBSCRIPTION",
+        "btn_cancel": "🚫 CANCEL",
+        "btn_stars_go": "⭐ Stars up to 42% off",
+        "payment_success": "✅ <b>Payment successful!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for your purchase! ❤️",
+        "payment_success_test": "✅ <b>Access granted!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for using the bot! ❤️",
+        "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose a currency for payment",
+        "pay_rub": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: RollyPay\n\n💰 Total cost: {final} RUB\n\n🔒 You will get access to:\n• {project} (external link)\n\n✅ Invoice created!",
+        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@Nastia_sup</a>\n\nRate:\n1 ⭐ - 1 ruble",
+    }
 }
 
 # ==================================================
@@ -515,7 +523,7 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
 async def create_rollypay_payment(amount: int, user_id: int, tariff_key: str, tariff_name: str) -> str:
     url = "https://rollypay.io/api/v1/payments"
     headers = {
-        "X-API-Key": ROLLYPAY_API_KEY,
+        "X-API-Key": "z39_r_COJdiB7PWeddOYvzT2rx4cjIbS1m4JJcgBTi0",
         "Content-Type": "application/json",
         "X-Nonce": str(uuid.uuid4())
     }
@@ -524,7 +532,7 @@ async def create_rollypay_payment(amount: int, user_id: int, tariff_key: str, ta
         "payment_currency": "RUB",
         "order_id": f"order_{user_id}_{tariff_key}_{int(asyncio.get_event_loop().time())}",
         "description": f"Оплата доступа #{user_id}_{tariff_key}",
-        "callback_url": ROLLYPAY_CALLBACK_URL,
+        "callback_url": "https://t-bot-18jz.onrender.com/webhook",
         "success_url": "https://t.me/blogprivatbot",
         "fail_url": "https://t.me/blogprivatbot",
         "merchant_fee": "true"
@@ -714,5 +722,15 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+def run_bot():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    # Запускаем бота в фоновом потоке
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    print("✅ Бот запущен в фоновом потоке!")
+
+    # Запускаем Flask для Render
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
