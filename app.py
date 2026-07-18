@@ -6,7 +6,7 @@ from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ========== FLASK ДЛЯ RENDER ==========
+# ========== FLASK ДЛЯ ЗДОРОВЬЯ RENDER ==========
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -83,7 +83,7 @@ def is_tariff_paid(user_id, tariff_name):
     conn.close()
     return result is not None
 
-# ========== ФУНКЦИИ БОТА ==========
+# ========== КОМАНДЫ БОТА ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     balance = get_balance(user_id)
@@ -125,7 +125,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         deduct_balance(user_id, 1)
         add_paid_tariff(user_id, "test_access")
         
-        # Создаём одноразовую ссылку
+        # СОЗДАЁМ ССЫЛКУ (СИНХРОННО)
         try:
             from telegram import Bot
             bot = Bot(token=BOT_TOKEN)
@@ -197,8 +197,9 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     await update.message.reply_text("✅ Все данные сброшены!")
 
-# ========== ЗАПУСК БОТА ==========
+# ========== ЗАПУСК БОТА В ПОТОКЕ ==========
 def run_bot():
+    """Запускает бота в режиме POLLING (не webhook)"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -206,20 +207,21 @@ def run_bot():
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(CallbackQueryHandler(button_handler))
     
+    # ГЛАВНОЕ: запускаем polling, а не webhook
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# ========== ЗАПУСК ==========
+# ========== ГЛАВНЫЙ ЗАПУСК ==========
 if __name__ == "__main__":
     init_db()
     print("=" * 60)
-    print("🚀 ТЕСТОВЫЙ БОТ ЗАПУЩЕН (Web Service)")
+    print("🚀 БОТ ЗАПУЩЕН (POLLING + Flask)")
     print(f"📢 Канал: {TEST_CHANNEL_ID}")
-    print("💰 Баланс: 10 RUB | Тариф: 1 RUB")
-    print("🔗 Ссылки НА 1 ЧЕЛОВЕКА")
     print("=" * 60)
     
+    # Запускаем бота в отдельном потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
+    # Запускаем Flask для "живучести" на Render
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host="0.0.0.0", port=port)
