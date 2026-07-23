@@ -6,6 +6,7 @@ import uuid
 import aiohttp
 import sqlite3
 import threading
+import re
 from datetime import datetime, timedelta
 from flask import Flask
 from aiogram import Bot, Dispatcher, types, F
@@ -17,6 +18,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 # ==================================================
 # FLASK ДЛЯ RENDER
@@ -32,6 +35,90 @@ def health():
     return "OK", 200
 
 # ==================================================
+# SUPABASE
+# ==================================================
+SUPABASE_URL = "postgresql://postgres:5369fasF352@db.pyjpmckzoexfktjezjho.supabase.co:5432/postgres"
+
+engine = create_engine(
+    SUPABASE_URL,
+    echo=False,
+    pool_pre_ping=True
+)
+
+def get_all_users():
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT user_id FROM users"))
+            return [row[0] for row in result]
+    except Exception as e:
+        logging.error(f"Ошибка получения пользователей: {e}")
+        return []
+
+def get_user_count():
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM users"))
+            return result.fetchone()[0] or 0
+    except Exception as e:
+        logging.error(f"Ошибка получения количества пользователей: {e}")
+        return 0
+
+def add_user(user_id: int, first_name: str, username: str = None):
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("INSERT INTO users (user_id, first_name, username) VALUES (:id, :name, :uname) ON CONFLICT (user_id) DO NOTHING"),
+                {"id": user_id, "name": first_name, "uname": username}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка добавления пользователя: {e}")
+        return False
+
+def add_user_discount(user_id: int, discount_code: str, discount_percent: int):
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO user_discounts (user_id, discount_code, discount_percent)
+                    VALUES (:id, :code, :percent)
+                    ON CONFLICT (user_id, discount_code) DO NOTHING
+                """),
+                {"id": user_id, "code": discount_code, "percent": discount_percent}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка сохранения скидки: {e}")
+        return False
+
+def get_user_discounts(user_id: int):
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT discount_code, discount_percent, used FROM user_discounts WHERE user_id = :id AND used = 0"),
+                {"id": user_id}
+            )
+            return result.fetchall()
+    except Exception as e:
+        logging.error(f"Ошибка получения скидок: {e}")
+        return []
+
+def mark_discount_used(user_id: int, discount_code: str):
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("UPDATE user_discounts SET used = 1 WHERE user_id = :id AND discount_code = :code"),
+                {"id": user_id, "code": discount_code}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка отметки скидки: {e}")
+        return False
+
+# ==================================================
 # КОНФИГУРАЦИЯ
 # ==================================================
 ROLLYPAY_API_KEY = "z39_r_COJdiB7PWeddOYvzT2rx4cjIbS1m4JJcgBTi0"
@@ -41,7 +128,7 @@ BOT_TOKEN = "8814729405:AAG5QrI-r4L813SYs7X0spMSCjfEt6toQ1k"
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
 SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
-ADMIN_ID = 8370080332
+ADMIN_IDS = [8370080332, 8559381302]
 
 DOCS_RU = {
     "offer": "https://telegra.ph/POLZOVATELSKOE-SOGLASHENIE-07-01-29",
@@ -56,27 +143,23 @@ DOCS_EN = {
 # ID КАНАЛОВ
 # ==================================================
 CHANNEL_IDS = {
-    "1": "-1004267025056",   # Слив знаменитостей
-    "2": "-1004478645537",   # Сливы шкур
-    "3": "-1004325704012",   # Mini Детск. До 12
-    "4": "-1004362010819",   # ШкоДнищь
-    "5": "-1004303957771",   # Premium Детск. До 12
-    "6": "-1004429510738",   # Канал Зоо
-    "7": "-1003748125426",   # Геи
-    "8": "-1004415846130",   # Закладчицы
-    "9": "-1004331987176",   # Всё включено 2026
-    "10": "-1001234567899",  # Vpn 7 дней
-    "11": "-1003862973415",  # Пак - Обновление ссылок
-    "12": "-1004123456789",  # Альтушки
-    "13": "-1004234567890",  # Износы
-    "14": "-1004345678901",  # Жесть
-    "15": "-1004456789012",  # Скрытые камеры
-    "16": "-1004567890123",  # Вписки
-    "test": "-1003875225035", # Тестовый тариф
+    "1": "-1004267025056",
+    "2": "-1004478645537",
+    "3": "-1004325704012",
+    "4": "-1004362010819",
+    "5": "-1004303957771",
+    "6": "-1004429510738",
+    "7": "-1003748125426",
+    "8": "-1004415846130",
+    "9": "-1004331987176",
+    "10": "-1001234567899",
+    "11": "-1003862973415",
+    "14": "-1004345678901",
+    "test": "-1003875225035",
 }
 
 # ==================================================
-# БАЗА ДАННЫХ
+# БАЗА ДАННЫХ (SQLite)
 # ==================================================
 DB_PATH = "users.db"
 
@@ -99,10 +182,7 @@ def add_paid_tariff(user_id: int, tariff_key: str):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR IGNORE INTO paid_tariffs (user_id, tariff_key)
-            VALUES (?, ?)
-        ''', (user_id, tariff_key))
+        cursor.execute('INSERT OR IGNORE INTO paid_tariffs (user_id, tariff_key) VALUES (?, ?)', (user_id, tariff_key))
         conn.commit()
         conn.close()
         return True
@@ -114,9 +194,7 @@ def get_paid_tariffs(user_id: int):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT tariff_key FROM paid_tariffs WHERE user_id = ?
-        ''', (user_id,))
+        cursor.execute('SELECT tariff_key FROM paid_tariffs WHERE user_id = ?', (user_id,))
         result = [row[0] for row in cursor.fetchall()]
         conn.close()
         return result
@@ -128,9 +206,7 @@ def is_tariff_paid(user_id: int, tariff_key: str):
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 1 FROM paid_tariffs WHERE user_id = ? AND tariff_key = ?
-        ''', (user_id, tariff_key))
+        cursor.execute('SELECT 1 FROM paid_tariffs WHERE user_id = ? AND tariff_key = ?', (user_id, tariff_key))
         result = cursor.fetchone() is not None
         conn.close()
         return result
@@ -154,8 +230,8 @@ LANG = {
         "promo_success": "✅ Промокод <b>{code}</b> активирован! Скидка {discount}% 🔥\n\n📋 <b>{name}</b>\n💰 Цена: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nВыберите валюту для оплаты.",
         "promo_fail": "❌ Промокод не найден. Попробуйте еще раз (или нажмите ◀️ Отмена).",
         "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите валюту для оплаты тарифа",
-        "pay_rub": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: RollyPay\n\n💰 Итоговая стоимость: {final} RUB\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\n✅ Счет на оплату сформирован! Сразу же после оплаты здесь появятся ссылки с доступами",
-        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@Nastia_sup</a>\n\nкурс:\n1 ⭐ - 1 рубль\n\nОтправьте скриншот или файл подтверждения оплаты - он будет передан продавцу.\n\n⚠️ <b>Внимание:</b> на квитанции должны быть четко видны: дата, время и сумма платежа!\nЗа поддельные скриншоты продавец вас может заблокировать!",
+        "pay_rub": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: RollyPay\n\n💰 Итоговая стоимость: {final} RUB\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\n✅ Счет на оплату сформирован!",
+        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@Nastia_sup</a>\n\nкурс:\n1 ⭐ - 1 рубль",
         "refresh_link": "♻️ <i>Ссылка обновлена!</i>",
         "btn_prices": "💵 Тарифы",
         "btn_subs": "⏳ Мои подписки",
@@ -189,8 +265,8 @@ LANG = {
         "promo_success": "✅ Promo code <b>{code}</b> activated! {discount}% discount 🔥\n\n📋 <b>{name}</b>\n💰 Price: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nChoose a currency for payment.",
         "promo_fail": "❌ Promo code not found. Try again (or press ◀️ Cancel).",
         "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose a currency for payment",
-        "pay_rub": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: RollyPay\n\n💰 Total cost: {final} RUB\n\n🔒 You will get access to:\n• {project} (external link)\n\n✅ Invoice created! Right after payment, access links will appear here",
-        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@Nastia_sup</a>\n\nRate:\n1 ⭐ - 1 ruble\n\nSend a screenshot or file confirming payment - it will be forwarded to the seller.\n\n⚠️ <b>Attention:</b> the receipt must clearly show: date, time, and payment amount!\nFor fake screenshots, the seller may block you!",
+        "pay_rub": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: RollyPay\n\n💰 Total cost: {final} RUB\n\n🔒 You will get access to:\n• {project} (external link)\n\n✅ Invoice created!",
+        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@Nastia_sup</a>\n\nRate:\n1 ⭐ - 1 ruble",
         "refresh_link": "♻️ <i>Link refreshed!</i>",
         "btn_prices": "💵 Prices",
         "btn_subs": "⏳ My subscriptions",
@@ -215,7 +291,7 @@ LANG = {
 }
 
 # ==================================================
-# ТАРИФЫ (ВСЕ В ОДНОЙ КАТЕГОРИИ, БЕЗ ПРИСТАВКИ "(Новое)")
+# ТАРИФЫ
 # ==================================================
 TARIFFS = {
     "1": {
@@ -295,7 +371,7 @@ TARIFFS = {
         "price_stars": 450,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "category": "main",
+        "category": "paki",
         "desc_ru": "Чтo тебя ждeт в нaшu̸х прu̸вαтαх\n\nЖестκu̸e uu̸знαсu̸лвaнu̸я 3αkладчu̸ц\n0тсосы, е6ля зαкладчu̸ц в пoсαдкαх\nПолные вu̸део с зαкладчu̸цамu̸"
     },
     "9": {
@@ -325,28 +401,8 @@ TARIFFS = {
         "price_stars": 600,
         "duration_ru": "21 дней",
         "duration_en": "21 days",
-        "category": "main",
+        "category": "paki",
         "desc_ru": "Cливaeм ccлыky дpyгиx кaнaлoв, peкoмeндyeм пoкyпaть пocлe пpocмoтpa дpyгиx тapифoв\n\nЕдинственный пак который не входит во всё включено"
-    },
-    "12": {
-        "name_ru": "🎭 Альтушки 🦄",
-        "name_en": "🎭 Alt girls 🦄",
-        "price_rub": 299,
-        "price_stars": 250,
-        "duration_ru": "1 месяц",
-        "duration_en": "1 month",
-        "category": "main",
-        "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• αльтушkи (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл co cливaми αльтушeк, эмo, пaнkoв и дpyгиx нeфopмaлoв.\n\n❓Уpoвeнь? 14-20 лeт, coбpaны caмыe coчныe cливы нeфopмaлoк, ecть гpyппoвyшkи, инцecT, cкpытыe кaмepы, жecтkий ceкc.\n\n✅ Пoмимo видeo пpилaгaeтcя apхив c дoпoлнитeльным koнтeнтoм."
-    },
-    "13": {
-        "name_ru": "💀Premium Износьl",
-        "name_en": "💀Premium Rapes",
-        "price_rub": 559,
-        "price_stars": 500,
-        "duration_ru": "1 месяц",
-        "duration_en": "1 month",
-        "category": "main",
-        "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Изнocы (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмыми жecтkими видeo из**cилoв@ний.\n\n❓Уpoвeнь? 13-17, бывают и до 13, пoлныe видeo нacилия, инцecT, гpyппoвыe из**cилoв@ния, cкpытыe кaмepы, жecть.\n\n✅ также прилагается дополнительный к@нал"
     },
     "14": {
         "name_ru": "💯Жêçть (2-17 Jlet)🩸",
@@ -355,28 +411,8 @@ TARIFFS = {
         "price_stars": 550,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "category": "main",
+        "category": "paki",
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Жecть (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмым жecтkим koнтeнтoм, чтo ecть в интepнeтe.\n\n❓Уpoвeнь? 14-20 лeт, кpoвь, yнижeния, бoль, экcтpим, мясo, гpyппoвyшkи, инцecT — вce caмoe жecтkoe."
-    },
-    "15": {
-        "name_ru": "🎞️ Скрьlтые к@меры🎥",
-        "name_en": "🎞️ Hidden cameras🎥",
-        "price_rub": 499,
-        "price_stars": 450,
-        "duration_ru": "1 месяц",
-        "duration_en": "1 month",
-        "category": "main",
-        "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Cкpытыe кaмepы (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл co cкpьIтыми кaмepaми из caмыx нeoжидaнныx мecт.\n\n❓Уpoвeнь? 13-18 лeт, paздeвaлkи, тyaлeты, дyшeвыe, cкpьIтыe кaмepы в шkoлax и yнивepcитeтax, бывают даже под партой, в вазе кабинета физрука, peaльныe cливы.\n\n✅ Пoмимo видeo пpилaгaeтcя apхив c дoпoлнитeльным koнтeнтoм."
-    },
-    "16": {
-        "name_ru": "🍻 Vпиçкu🍾",
-        "name_en": "🍻 Partys🍾",
-        "price_rub": 349,
-        "price_stars": 300,
-        "duration_ru": "1 месяц",
-        "duration_en": "1 month",
-        "category": "main",
-        "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Bпиcки (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл co cливaми c вeчepинoк и впиcoк, без постан0вы.\n\n❓Уpoвeнь? 14-20 лeт, пьяныe кoмпaнии, opгии, гpyппoвyшkи, cкp\"тыe кaмepы, воспользовались моментом, без сознания, пoлнoe бeзyмcтвo тycoвoк без цen3ypьl.\n\n✅ Пoмимo видeo пpилaгaeтcя apхив c дoпoлнитeльным koнтeнтoм."
     }
 }
 
@@ -397,7 +433,8 @@ PROMO_CODES = {
     "SUPER25": 25,
     "HOMAKE40": 40,
     "BANK50": 50,
-    "LOLIPOP80": 80
+    "LOLIPOP80": 80,
+    "newpopolnenie": 60
 }
 
 # --- ИНИЦИАЛИЗАЦИЯ ---
@@ -406,11 +443,30 @@ session = AiohttpSession()
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML), session=session)
 dp = Dispatcher(storage=storage)
 
+# --- FSM STATES ---
 class PromoStates(StatesGroup):
     waiting_for_promo = State()
 
+class MailingStates(StatesGroup):
+    waiting_for_content = State()
+    waiting_for_mail_type = State()
+
 # --- ФУНКЦИИ ---
 async def create_rollypay_payment(amount: int, user_id: int, tariff_key: str, tariff_name: str) -> str:
+    discounts = get_user_discounts(user_id)
+    final_price = amount
+    discount_code = None
+    
+    if discounts:
+        max_discount = max(d[1] for d in discounts)
+        if max_discount > 0:
+            final_price = int(amount * (1 - max_discount / 100))
+            for code, percent, used in discounts:
+                if percent == max_discount and used == 0:
+                    mark_discount_used(user_id, code)
+                    discount_code = code
+                    break
+    
     url = "https://rollypay.io/api/v1/payments"
     headers = {
         "X-API-Key": ROLLYPAY_API_KEY,
@@ -418,10 +474,10 @@ async def create_rollypay_payment(amount: int, user_id: int, tariff_key: str, ta
         "X-Nonce": str(uuid.uuid4())
     }
     payload = {
-        "amount": str(amount),
+        "amount": str(final_price),
         "payment_currency": "RUB",
-        "order_id": f"order_{user_id}_{tariff_key}_{int(asyncio.get_event_loop().time())}",
-        "description": f"Оплата доступа #{user_id}_{tariff_key}",
+        "order_id": f"order_{user_id}_{tariff_key}_{int(datetime.now().timestamp())}",
+        "description": f"Оплата доступа #{user_id}_{tariff_key}" + (f" (скидка {discount_code})" if discount_code else ""),
         "callback_url": ROLLYPAY_CALLBACK_URL,
         "success_url": "https://t.me/blogprivatbot",
         "fail_url": "https://t.me/blogprivatbot",
@@ -484,11 +540,23 @@ def get_main_keyboard(lang):
     ], resize_keyboard=True)
 
 def get_tariff_keyboard(lang):
-    """Все тарифы в одном меню (без Паков)"""
+    """Главное меню (тарифы main + кнопка Паки)"""
     buttons = []
     for key, data in TARIFFS.items():
-        name = data['name_ru'] if lang == 'ru' else data['name_en']
-        buttons.append([InlineKeyboardButton(text=name, callback_data=f"tariff_{key}")])
+        if data.get("category") == "main":
+            name = data['name_ru'] if lang == 'ru' else data['name_en']
+            buttons.append([InlineKeyboardButton(text=name, callback_data=f"tariff_{key}")])
+    buttons.append([InlineKeyboardButton(text="👈🏻 Паки", callback_data="show_paki")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_paki_keyboard(lang):
+    """Меню паков (только category == paki)"""
+    buttons = []
+    for key, data in TARIFFS.items():
+        if data.get("category") == "paki":
+            name = data['name_ru'] if lang == 'ru' else data['name_en']
+            buttons.append([InlineKeyboardButton(text=name, callback_data=f"tariff_{key}")])
+    buttons.append([InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_prices")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_test_tariff_keyboard(lang):
@@ -538,13 +606,24 @@ def get_payment_action_keyboard(payment_url, tariff_key, lang="ru"):
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
+def get_admin_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_mailing")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")]
+    ])
+
 # --- ХЭНДЛЕРЫ ---
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    lang = await get_lang(state)
-    user_name = message.from_user.first_name
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    username = message.from_user.username
     
-    welcome_text = f"""👋 Привет, {user_name}!
+    add_user(user_id, first_name, username)
+    
+    lang = await get_lang(state)
+    
+    welcome_text = f"""👋 Привет, {first_name}!
 Ты попал в наш бот✅
 
 Нажимая на каждый тариф ты видишь краткое описание.
@@ -557,6 +636,212 @@ async def cmd_start(message: Message, state: FSMContext):
     
     menu_text = LANG[lang]["main_menu_text"]
     await message.answer(menu_text, reply_markup=get_tariff_keyboard(lang))
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    user_count = get_user_count()
+    
+    text = f"""⚙️ <b>Админ-панель</b>
+
+👥 Всего пользователей: {user_count}
+
+Выберите действие:"""
+    
+    await message.answer(text, reply_markup=get_admin_keyboard())
+
+@dp.callback_query(F.data == "admin_mailing")
+async def admin_mailing_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📨 <b>Рассылка</b>\n\n"
+        "Отправь мне сообщение (текст, фото, видео, GIF, документ), "
+        "и я разошлю его ВСЕМ пользователям бота.\n\n"
+        "⚠️ <b>Внимание:</b> Рассылка пойдёт всем пользователям, которые "
+        "когда-либо взаимодействовали с ботом.\n\n"
+        "🔄 Чтобы отменить, отправь /cancel"
+    )
+    await state.set_state(MailingStates.waiting_for_content)
+
+@dp.message(Command("mail"))
+async def cmd_mail(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏷️ Скидка 25%", callback_data="mail_promo25")],
+        [InlineKeyboardButton(text="🏷️ Скидка 40%", callback_data="mail_promo40")],
+        [InlineKeyboardButton(text="🏷️ Скидка 60%", callback_data="mail_promo60")],
+        [InlineKeyboardButton(text="📨 Обычная рассылка", callback_data="mail_normal")]
+    ])
+    
+    await message.answer(
+        "📨 <b>Выбери тип рассылки:</b>\n\n"
+        "• Скидка 25% — пользователь получит скидку 25%\n"
+        "• Скидка 40% — пользователь получит скидку 40%\n"
+        "• Скидка 60% — пользователь получит скидку 60%\n"
+        "• Обычная — просто текст",
+        reply_markup=keyboard
+    )
+    await state.set_state(MailingStates.waiting_for_mail_type)
+
+@dp.callback_query(MailingStates.waiting_for_mail_type)
+async def process_mail_type(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    mail_type = callback.data.replace("mail_", "")
+    await state.update_data(mail_type=mail_type)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📝 <b>Отправь текст сообщения</b>\n\n"
+        "Этот текст увидят все пользователи. Ты можешь отправить:\n"
+        "• Текст\n"
+        "• Фото\n"
+        "• Видео\n"
+        "• GIF\n\n"
+        "🔄 Чтобы отменить, отправь /cancel"
+    )
+    await state.set_state(MailingStates.waiting_for_content)
+    await callback.answer()
+
+@dp.message(MailingStates.waiting_for_content)
+async def process_mailing_content(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    mail_type = data.get("mail_type", "normal")
+    
+    await message.answer("⏳ Начинаю рассылку...")
+    
+    users = get_all_users()
+    
+    if not users:
+        await message.answer("❌ Нет пользователей для рассылки!")
+        await state.clear()
+        return
+    
+    if mail_type == "promo25":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_25")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 25% на любой тариф!"
+    elif mail_type == "promo40":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_40")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 40% на любой тариф!"
+    elif mail_type == "promo60":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_60")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 60% на любой тариф!"
+    else:
+        keyboard = None
+        footer = ""
+    
+    success = 0
+    failed = 0
+    
+    for user_id in users:
+        try:
+            if message.text:
+                text = message.text + footer
+                await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=keyboard)
+            elif message.photo:
+                await bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.video:
+                await bot.send_video(user_id, message.video.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.animation:
+                await bot.send_animation(user_id, message.animation.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.document:
+                await bot.send_document(user_id, message.document.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            else:
+                await message.answer("❌ Неподдерживаемый тип сообщения!")
+                await state.clear()
+                return
+            
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+    
+    await message.answer(
+        f"✅ <b>Рассылка завершена!</b>\n\n"
+        f"📤 Отправлено: {success}\n"
+        f"❌ Не доставлено: {failed}\n"
+        f"👥 Всего пользователей: {len(users)}\n"
+        f"📌 Тип: {mail_type}"
+    )
+    await state.clear()
+
+@dp.message(Command("cancel"))
+async def cancel_mailing(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("✅ Рассылка отменена.")
+
+@dp.callback_query(F.data == "mail_discount_25")
+async def mail_discount_25(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "SUPER25", 25)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 25% активирована!</b>\n\n"
+        "Ты получил скидку 25% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 25% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "mail_discount_40")
+async def mail_discount_40(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "HOMAKE40", 40)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 40% активирована!</b>\n\n"
+        "Ты получил скидку 40% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 40% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "mail_discount_60")
+async def mail_discount_60(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "newpopolnenie", 60)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 60% активирована!</b>\n\n"
+        "Ты получил скидку 60% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 60% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    user_count = get_user_count()
+    
+    await callback.message.edit_text(
+        f"📊 <b>Статистика бота</b>\n\n"
+        f"👥 Всего пользователей: {user_count}",
+        reply_markup=get_admin_keyboard()
+    )
+    await callback.answer()
 
 @dp.message(Command("test67"))
 async def cmd_test67(message: Message, state: FSMContext):
@@ -603,7 +888,7 @@ async def pay_test_tariff(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(Command("reset"))
 async def cmd_reset(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для этой команды!")
         return
     await message.answer("🔄 Выполняю сброс...")
@@ -660,6 +945,12 @@ async def back_to_prices(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
+@dp.callback_query(F.data == "show_paki")
+async def show_paki(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(state)
+    await callback.answer()
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_paki_keyboard(lang))
+
 @dp.callback_query(F.data.startswith("tariff_"))
 async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
     tariff_key = callback.data.replace("tariff_", "")
@@ -705,9 +996,7 @@ async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
 
-# --- ВСЕ ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (promo, pay, stars и т.д.) ---
-# (они остаются без изменений, я их не трогаю, чтобы не раздувать код)
-
+# --- ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ---
 @dp.callback_query(F.data.startswith("enter_promo_"))
 async def enter_promo(callback: CallbackQuery, state: FSMContext):
     tariff_key = callback.data.replace("enter_promo_", "")
@@ -959,22 +1248,19 @@ async def main():
     init_db()
     print("=" * 60)
     print("🚀 БОТ ЗАПУЩЕН!")
-    print("💾 База данных готова!")
+    print("📦 База данных: Supabase + SQLite")
+    print("👥 Пользователи сохраняются в Supabase")
     print("=" * 60)
     
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 def run_flask():
-    """Запускает Flask в фоновом потоке"""
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
-    # Запускаем Flask в фоновом потоке
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print("✅ Flask запущен в фоновом потоке!")
-
-    # Бот запускаем в основном потоке
     asyncio.run(main())
