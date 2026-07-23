@@ -1239,10 +1239,6 @@ async def refresh_link(callback: CallbackQuery, state: FSMContext):
         await callback.answer("✅ Новая ссылка сгенерирована!", show_alert=True)
     else:
         await callback.answer("❌ Ошибка создания новой ссылки. Попробуйте позже.", show_alert=True)
-
-@flask_app.route('/health')
-def health():
-    return "OK", 200
     
 # ==================================================
 # ЗАПУСК
