@@ -37,7 +37,7 @@ def health():
 # ==================================================
 # SUPABASE
 # ==================================================
-SUPABASE_URL = "postgresql://postgres:5369fasF352@db.pyjpmckzoexfktjezjho.supabase.co:5432/postgres"
+SUPABASE_URL = "postgresql://postgres:5369fasF352@db.pyjpmckzoexfktjezjho.supabase.co:6543/postgres"
 
 engine = create_engine(
     SUPABASE_URL,
