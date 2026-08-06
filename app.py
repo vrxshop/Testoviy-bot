@@ -3,7 +3,6 @@ import asyncio
 import os
 import json
 import uuid
-import aiohttp
 import sqlite3
 import threading
 import re
@@ -37,13 +36,9 @@ def health():
 # ==================================================
 # SUPABASE
 # ==================================================
-SUPABASE_URL = "postgresql://postgres:5369fasF352@db.pyjpmckzoexfktjezjho.supabase.co:6543/postgres"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-engine = create_engine(
-    SUPABASE_URL,
-    echo=False,
-    pool_pre_ping=True
-)
+engine = create_engine(SUPABASE_URL, echo=False, pool_pre_ping=True)
 
 def get_all_users():
     try:
@@ -80,11 +75,7 @@ def add_user_discount(user_id: int, discount_code: str, discount_percent: int):
     try:
         with engine.connect() as conn:
             conn.execute(
-                text("""
-                    INSERT INTO user_discounts (user_id, discount_code, discount_percent)
-                    VALUES (:id, :code, :percent)
-                    ON CONFLICT (user_id, discount_code) DO NOTHING
-                """),
+                text("INSERT INTO user_discounts (user_id, discount_code, discount_percent) VALUES (:id, :code, :percent) ON CONFLICT (user_id, discount_code) DO NOTHING"),
                 {"id": user_id, "code": discount_code, "percent": discount_percent}
             )
             conn.commit()
@@ -96,10 +87,7 @@ def add_user_discount(user_id: int, discount_code: str, discount_percent: int):
 def get_user_discounts(user_id: int):
     try:
         with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT discount_code, discount_percent, used FROM user_discounts WHERE user_id = :id AND used = 0"),
-                {"id": user_id}
-            )
+            result = conn.execute(text("SELECT discount_code, discount_percent, used FROM user_discounts WHERE user_id = :id AND used = 0"), {"id": user_id})
             return result.fetchall()
     except Exception as e:
         logging.error(f"Ошибка получения скидок: {e}")
@@ -108,10 +96,7 @@ def get_user_discounts(user_id: int):
 def mark_discount_used(user_id: int, discount_code: str):
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text("UPDATE user_discounts SET used = 1 WHERE user_id = :id AND discount_code = :code"),
-                {"id": user_id, "code": discount_code}
-            )
+            conn.execute(text("UPDATE user_discounts SET used = 1 WHERE user_id = :id AND discount_code = :code"), {"id": user_id, "code": discount_code})
             conn.commit()
         return True
     except Exception as e:
@@ -119,25 +104,13 @@ def mark_discount_used(user_id: int, discount_code: str):
         return False
 
 # ==================================================
-# КОНФИГУРАЦИЯ
+# КОНФИГУРАЦИЯ (БЕЗ ROLLYPAY)
 # ==================================================
-ROLLYPAY_API_KEY = os.getenv("ROLLYPAY_API_KEY")
-ROLLYPAY_CALLBACK_URL = "https://t-bot-18jz.onrender.com/webhook"
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
 SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
 ADMIN_IDS = [8370080332, 8559381302]
-
-DOCS_RU = {
-    "offer": "https://telegra.ph/POLZOVATELSKOE-SOGLASHENIE-07-01-29",
-    "policy": "https://telegra.ph/Politika-konfidicialnosti-07-01"
-}
-DOCS_EN = {
-    "offer": "https://telegra.ph/POLZOVATELSKOE-SOGLASHENIE-07-01-29",
-    "policy": "https://telegra.ph/Politika-konfidicialnosti-07-01"
-}
 
 # ==================================================
 # ID КАНАЛОВ
@@ -153,7 +126,7 @@ CHANNEL_IDS = {
     "10": "-1001234567899",
     "11": "-1003862973415",
     "14": "-1004345678901",
-    "15": "-1004267025056",  # Новый тариф
+    "15": "-1004267025056",
     "test": "-1003875225035",
 }
 
@@ -293,9 +266,6 @@ LANG = {
 # ТАРИФЫ
 # ==================================================
 TARIFFS = {
-    # ❌ УДАЛЕН "Слив знаменитостей" (был ключ "1")
-    # ❌ УДАЛЕНЫ "Закладчицы" (был ключ "8")
-    
     "2": {
         "name_ru": "🖤 Сливы шкyp 🖤",
         "name_en": "🖤 Skin Leaks 🖤",
@@ -356,13 +326,11 @@ TARIFFS = {
         "category": "main",
         "desc_ru": "Вы получите доступ к следующим ресурсам:\n• Gg (канал)\n\n❗️ После покупки вы попадете в приватный канал с м+м\n\n✅ Уровень? Есть до 12, но в основном видео 12-17, есть немного изnocuлование, инцceT, скрытые камеры шkoльнов/стyдeнтов и конечно основное же ceкс и минет\n\n✅ Помимо видео прилагается еще дополнительный архив."
     },
-    # ❌ УДАЛЕН "Закладчицы" (ключ "8")
-    
     "9": {
         "name_ru": "🩵Всё включено 2026💚",
         "name_en": "🩵All inclusive 2026💚",
-        "price_rub": 2999,
-        "price_stars": 2500,
+        "price_rub": 1499,
+        "price_stars": 1350,
         "duration_ru": "Бессрочно",
         "duration_en": "Forever",
         "category": "main",
@@ -446,52 +414,6 @@ class MailingStates(StatesGroup):
     waiting_for_mail_type = State()
 
 # --- ФУНКЦИИ ---
-async def create_rollypay_payment(amount: int, user_id: int, tariff_key: str, tariff_name: str) -> str:
-    discounts = get_user_discounts(user_id)
-    final_price = amount
-    discount_code = None
-    
-    if discounts:
-        max_discount = max(d[1] for d in discounts)
-        if max_discount > 0:
-            final_price = int(amount * (1 - max_discount / 100))
-            for code, percent, used in discounts:
-                if percent == max_discount and used == 0:
-                    mark_discount_used(user_id, code)
-                    discount_code = code
-                    break
-    
-    url = "https://rollypay.io/api/v1/payments"
-    headers = {
-        "X-API-Key": ROLLYPAY_API_KEY,
-        "Content-Type": "application/json",
-        "X-Nonce": str(uuid.uuid4())
-    }
-    payload = {
-        "amount": str(final_price),
-        "payment_currency": "RUB",
-        "order_id": f"order_{user_id}_{tariff_key}_{int(datetime.now().timestamp())}",
-        "description": f"Оплата доступа #{user_id}_{tariff_key}" + (f" (скидка {discount_code})" if discount_code else ""),
-        "callback_url": ROLLYPAY_CALLBACK_URL,
-        "success_url": "https://t.me/blogprivatbot",
-        "fail_url": "https://t.me/blogprivatbot",
-        "merchant_fee": "true"
-    }
-    
-    async with aiohttp.ClientSession() as client:
-        async with client.post(url, headers=headers, json=payload) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data.get("pay_url")
-            else:
-                error_text = await response.text()
-                logging.error(f"Ошибка RollyPay: {response.status} - {error_text}")
-                return None
-
-async def get_lang(state: FSMContext):
-    data = await state.get_data()
-    return data.get("lang", "ru")
-
 async def create_one_time_link(chat_id: str) -> str:
     try:
         expire_date = datetime.now() + timedelta(seconds=30)
@@ -505,6 +427,10 @@ async def create_one_time_link(chat_id: str) -> str:
     except Exception as e:
         logging.error(f"Ошибка создания ссылки: {e}")
         return None
+
+async def get_lang(state: FSMContext):
+    data = await state.get_data()
+    return data.get("lang", "ru")
 
 async def save_payment_and_send_link(message: Message, tariff_key: str, lang: str, user_id: int):
     if tariff_key not in CHANNEL_IDS:
@@ -590,13 +516,6 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_rub, callback_data=f"pay_rub_{tariff_key}")],
         [InlineKeyboardButton(text=btn_stars, callback_data=f"pay_stars_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
-    ])
-
-def get_payment_action_keyboard(payment_url, tariff_key, lang="ru"):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=LANG[lang]["btn_goto_pay"], url=payment_url)],
-        [InlineKeyboardButton(text=LANG[lang]["btn_new_link"], callback_data=f"refresh_link_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
@@ -1123,49 +1042,54 @@ async def process_rub_payment(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff = TARIFFS[tariff_key]
-    
-    if tariff['price_rub'] == 0:
-        lang = await get_lang(state)
-        user_id = callback.from_user.id
-        await callback.message.delete()
-        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
-        await callback.answer("✅ Доступ открыт!")
-        return
-    
     lang = await get_lang(state)
     data = await state.get_data()
     discount = data.get("discount", 0)
     
     final_price = int(tariff['price_rub'] * (1 - discount / 100))
-    user_id = callback.from_user.id
     
-    await state.update_data(pending_tariff=tariff_key)
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
     
-    payment_url = await create_rollypay_payment(final_price, user_id, tariff_key, tariff['name_ru'])
-    
-    if payment_url:
-        name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-        duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
-        
-        if discount > 0:
-            price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
-        else:
-            price_line = f"💰 Цена: {final_price} RUB\n"
-        
-        text = LANG[lang]["pay_rub"].format(name=name, duration=duration, price_line=price_line, final=final_price, project=PROJECT_NAME)
-        await callback.message.edit_text(text, reply_markup=get_payment_action_keyboard(payment_url, tariff_key, lang))
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
     else:
-        await callback.answer("❌ Ошибка создания платежа. Попробуйте позже или выберите другой способ оплаты.", show_alert=True)
-        
-@dp.callback_query(F.data.startswith("payment_success_"))
-async def payment_success(callback: CallbackQuery, state: FSMContext):
-    tariff_key = callback.data.replace("payment_success_", "")
-    lang = await get_lang(state)
-    user_id = callback.from_user.id
+        price_line = f"💰 Цена: {final_price} RUB\n"
     
-    await callback.message.delete()
-    await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
-    await callback.answer("✅ Оплата успешно завершена!")
+    text = f"""
+💳 <b>Оплата через СБП</b>
+
+📋 <b>{name}</b>
+📅 Срок: {duration}
+{price_line}
+
+📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
+
+1️⃣ Перейдите в бот для оплаты:
+👉 @CenterDrombot
+
+2️⃣ Купите там услугу <b>«Абонемент VIP»</b> за {final_price}₽
+
+3️⃣ После оплаты сделайте скриншот чека
+
+4️⃣ Отправьте скриншот @Nastia_sup
+
+5️⃣ Укажите название тарифа, который хотите получить
+
+⏰ Время ожидания: 5-20 минут
+
+⚠️ Без скриншота доступ не выдается!
+"""
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚗 Перейти в бот оплаты", url="https://t.me/CenterDrombot")],
+            [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
+        ]),
+        disable_web_page_preview=True
+    )
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("pay_stars_"))
 async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
@@ -1176,23 +1100,13 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff = TARIFFS[tariff_key]
-    
-    if tariff['price_rub'] == 0:
-        lang = await get_lang(state)
-        user_id = callback.from_user.id
-        await callback.message.delete()
-        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
-        await callback.answer("✅ Доступ открыт!")
-        return
-    
     lang = await get_lang(state)
     data = await state.get_data()
     discount = data.get("discount", 0)
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
     
     final_price = int(tariff['price_stars'] * (1 - discount / 100))
-    demo_stars_url = f"https://t.me/TweetlyStarsBot?start=demo_stars_{tariff_key}"
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
     
     if discount > 0:
         price_line = f"💰 Цена: <s>{tariff['price_stars']} STARS</s> → {final_price} STARS (-{discount}%)\n"
@@ -1200,13 +1114,26 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
         price_line = f"💰 Цена: {final_price} STARS\n"
     
     support = SUPPORT_CONTACT_RU if lang == "ru" else SUPPORT_CONTACT_EN
-    text = LANG[lang]["pay_stars"].format(name=name, duration=duration, price_line=price_line, final=final_price, project=PROJECT_NAME, support=support)
     
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=LANG[lang]["btn_stars_go"], url=demo_stars_url)],
-        [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data=f"choose_pay_{tariff_key}")]
-    ])
-    await callback.message.edit_text(text, reply_markup=kb)
+    text = f"""
+⭐ <b>Оплата звездами</b>
+
+📋 <b>{name}</b>
+📅 Срок: {duration}
+{price_line}
+
+💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐
+
+ℹ️ <b>Информация по оплате</b>
+Подарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@Nastia_sup</a>
+
+курс: 1 ⭐ = 1 рубль
+
+📌 После оплаты напишите @Nastia_sup с подтверждением
+"""
+    
+    await callback.message.edit_text(text)
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("refresh_link_"))
 async def refresh_link(callback: CallbackQuery, state: FSMContext):
@@ -1219,29 +1146,61 @@ async def refresh_link(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     user_id = callback.from_user.id
     final_price = tariff['price_rub']
-
-    payment_url = await create_rollypay_payment(final_price, user_id, tariff_key, tariff['name_ru'])
-
-    if payment_url:
-        await callback.message.edit_reply_markup(
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_url)],
-                [InlineKeyboardButton(text="🔗 Получить новую ссылку", callback_data=f"refresh_link_{tariff_key}")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_prices")]
-            ])
-        )
-        await callback.answer("✅ Новая ссылка сгенерирована!", show_alert=True)
-    else:
-        await callback.answer("❌ Ошибка создания новой ссылки. Попробуйте позже.", show_alert=True)
     
+    # Просто обновляем инструкцию
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    if discount > 0:
+        final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    text = f"""
+💳 <b>Оплата через СБП</b>
+
+📋 <b>{tariff['name_ru']}</b>
+📅 Срок: {tariff['duration_ru']}
+💰 Цена: {final_price} RUB
+
+📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
+
+1️⃣ Перейдите в бот для оплаты:
+👉 @CenterDrombot
+
+2️⃣ Купите там услугу <b>«Абонемент VIP»</b> за {final_price}₽
+
+3️⃣ После оплаты сделайте скриншот чека
+
+4️⃣ Отправьте скриншот @Nastia_sup
+
+5️⃣ Укажите название тарифа
+
+⏰ Время ожидания: 5-20 минут
+"""
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚗 Перейти в бот оплаты", url="https://t.me/CenterDrombot")],
+            [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
+        ])
+    )
+    await callback.answer("✅ Инструкция обновлена!")
+
 # ==================================================
 # ЗАПУСК
 # ==================================================
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
+    
+    # Проверяем что токен задан
+    if not BOT_TOKEN:
+        logging.error("❌ BOT_TOKEN не задан в переменных окружения!")
+        return
+    
     print("=" * 60)
-    print("🚀 БОТ ЗАПУЩЕН!")
+    print("🚀 ОСНОВНОЙ БОТ ЗАПУЩЕН!")
     print("📦 База данных: Supabase + SQLite")
     print("👥 Пользователи сохраняются в Supabase")
     print("=" * 60)
