@@ -191,7 +191,7 @@ def is_tariff_paid(user_id: int, tariff_key: str):
         return False
 
 # ==================================================
-# ТЕКСТЫ (ВСЕ КОНТАКТЫ ЗАМЕНЕНЫ НА @kasgd)
+# ТЕКСТЫ
 # ==================================================
 LANG = {
     "ru": {
@@ -570,7 +570,10 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")]
     ])
 
-# --- ХЭНДЛЕРЫ ---
+# ==================================================
+# ХЭНДЛЕРЫ (ВСЕ!)
+# ==================================================
+
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -611,12 +614,452 @@ async def cmd_admin(message: Message):
     
     await message.answer(text, reply_markup=get_admin_keyboard())
 
-# ... ВСЕ ОСТАЛЬНЫЕ ХЭНДЛЕРЫ (рассылка, статистика, тарифы) ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ
-# Я не буду дублировать весь код, но ВАЖНО: ВСЕ @Nastia_sup ЗАМЕНЕНЫ НА @kasgd в текстах
+@dp.callback_query(F.data == "admin_mailing")
+async def admin_mailing_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📨 <b>Рассылка</b>\n\n"
+        "Отправь мне сообщение (текст, фото, видео, GIF, документ), "
+        "и я разошлю его ВСЕМ пользователям бота.\n\n"
+        "⚠️ <b>Внимание:</b> Рассылка пойдёт всем пользователям, которые "
+        "когда-либо взаимодействовали с ботом.\n\n"
+        "🔄 Чтобы отменить, отправь /cancel"
+    )
+    await state.set_state(MailingStates.waiting_for_content)
 
-# --- ОБРАБОТЧИКИ ОПЛАТЫ ---
+@dp.message(Command("mail"))
+async def cmd_mail(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏷️ Скидка 25%", callback_data="mail_promo25")],
+        [InlineKeyboardButton(text="🏷️ Скидка 40%", callback_data="mail_promo40")],
+        [InlineKeyboardButton(text="🏷️ Скидка 60%", callback_data="mail_promo60")],
+        [InlineKeyboardButton(text="📨 Обычная рассылка", callback_data="mail_normal")]
+    ])
+    
+    await message.answer(
+        "📨 <b>Выбери тип рассылки:</b>\n\n"
+        "• Скидка 25% — пользователь получит скидку 25%\n"
+        "• Скидка 40% — пользователь получит скидку 40%\n"
+        "• Скидка 60% — пользователь получит скидку 60%\n"
+        "• Обычная — просто текст",
+        reply_markup=keyboard
+    )
+    await state.set_state(MailingStates.waiting_for_mail_type)
+
+@dp.callback_query(MailingStates.waiting_for_mail_type)
+async def process_mail_type(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    mail_type = callback.data.replace("mail_", "")
+    await state.update_data(mail_type=mail_type)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "📝 <b>Отправь текст сообщения</b>\n\n"
+        "Этот текст увидят все пользователи. Ты можешь отправить:\n"
+        "• Текст\n"
+        "• Фото\n"
+        "• Видео\n"
+        "• GIF\n\n"
+        "🔄 Чтобы отменить, отправь /cancel"
+    )
+    await state.set_state(MailingStates.waiting_for_content)
+    await callback.answer()
+
+@dp.message(MailingStates.waiting_for_content)
+async def process_mailing_content(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    mail_type = data.get("mail_type", "normal")
+    
+    await message.answer("⏳ Начинаю рассылку...")
+    
+    users = get_all_users()
+    
+    if not users:
+        await message.answer("❌ Нет пользователей для рассылки!")
+        await state.clear()
+        return
+    
+    if mail_type == "promo25":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_25")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 25% на любой тариф!"
+    elif mail_type == "promo40":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_40")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 40% на любой тариф!"
+    elif mail_type == "promo60":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_60")]
+        ])
+        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 60% на любой тариф!"
+    else:
+        keyboard = None
+        footer = ""
+    
+    success = 0
+    failed = 0
+    
+    for user_id in users:
+        try:
+            if message.text:
+                text = message.text + footer
+                await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=keyboard)
+            elif message.photo:
+                await bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.video:
+                await bot.send_video(user_id, message.video.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.animation:
+                await bot.send_animation(user_id, message.animation.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            elif message.document:
+                await bot.send_document(user_id, message.document.file_id, caption=message.caption + footer, reply_markup=keyboard)
+            else:
+                await message.answer("❌ Неподдерживаемый тип сообщения!")
+                await state.clear()
+                return
+            
+            success += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+    
+    await message.answer(
+        f"✅ <b>Рассылка завершена!</b>\n\n"
+        f"📤 Отправлено: {success}\n"
+        f"❌ Не доставлено: {failed}\n"
+        f"👥 Всего пользователей: {len(users)}\n"
+        f"📌 Тип: {mail_type}"
+    )
+    await state.clear()
+
+@dp.message(Command("cancel"))
+async def cancel_command(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("✅ Отменено.")
+
+@dp.callback_query(F.data == "mail_discount_25")
+async def mail_discount_25(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "SUPER25", 25)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 25% активирована!</b>\n\n"
+        "Ты получил скидку 25% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 25% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "mail_discount_40")
+async def mail_discount_40(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "HOMAKE40", 40)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 40% активирована!</b>\n\n"
+        "Ты получил скидку 40% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 40% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "mail_discount_60")
+async def mail_discount_60(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    add_user_discount(user_id, "newpopolnenie", 60)
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Скидка 60% активирована!</b>\n\n"
+        "Ты получил скидку 60% на любой тариф 🎉\n\n"
+        "Скидка будет применена автоматически при покупке."
+    )
+    await callback.answer("✅ Скидка 60% активирована!", show_alert=True)
+
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    user_count = get_user_count()
+    
+    await callback.message.edit_text(
+        f"📊 <b>Статистика бота</b>\n\n"
+        f"👥 Всего пользователей: {user_count}",
+        reply_markup=get_admin_keyboard()
+    )
+    await callback.answer()
+
+@dp.message(Command("test67"))
+async def cmd_test67(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = message.from_user.id
+    
+    is_paid = is_tariff_paid(user_id, "test")
+    
+    if is_paid:
+        text = f"""📋 <b>{TEST_TARIFF['name_ru'] if lang == 'ru' else TEST_TARIFF['name_en']}</b>
+
+💰 Цена: БЕСПЛАТНО 🎉
+Срок доступа: {TEST_TARIFF['duration_ru'] if lang == 'ru' else TEST_TARIFF['duration_en']}
+
+{TEST_TARIFF['desc_ru'] if lang == 'ru' else TEST_TARIFF['desc_en']}
+
+✅ <b>ТАРИФ ОПЛАЧЕН</b>
+
+🔑 Для получения ссылки напишите в поддержку @kasgd"""
+        await message.answer(text)
+        return
+    
+    text = f"""📋 <b>{TEST_TARIFF['name_ru'] if lang == 'ru' else TEST_TARIFF['name_en']}</b>
+
+💰 Цена: БЕСПЛАТНО 🎉
+Срок доступа: {TEST_TARIFF['duration_ru'] if lang == 'ru' else TEST_TARIFF['duration_en']}
+
+{TEST_TARIFF['desc_ru'] if lang == 'ru' else TEST_TARIFF['desc_en']}"""
+    
+    await message.answer(text, reply_markup=get_test_tariff_keyboard(lang))
+
+@dp.callback_query(F.data == "pay_test")
+async def pay_test_tariff(callback: CallbackQuery, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    if is_tariff_paid(user_id, "test"):
+        await callback.answer("❌ Вы уже активировали тестовый тариф!", show_alert=True)
+        return
+    
+    await callback.message.delete()
+    await save_payment_and_send_link(callback.message, "test", lang, user_id)
+    await callback.answer("✅ Доступ открыт!")
+
+@dp.message(Command("reset"))
+async def cmd_reset(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для этой команды!")
+        return
+    await message.answer("🔄 Выполняю сброс...")
+    await message.answer("✅ Бот сброшен!")
+
+@dp.message(Command("language"))
+async def cmd_language(message: Message, state: FSMContext):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="set_lang_ru")],
+        [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_lang_en")]
+    ])
+    await message.answer("🌍 Выберите язык:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("set_lang_"))
+async def process_lang_change(callback: CallbackQuery, state: FSMContext):
+    lang = callback.data.replace("set_lang_", "")
+    await state.update_data(lang=lang)
+    await callback.answer()
+    await callback.message.delete()
+    await callback.message.answer(f"✅ Язык установлен на {'Русский' if lang == 'ru' else 'English'}! Нажмите /start")
+
+@dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
+async def show_prices(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    await message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
+
+@dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
+async def show_subscriptions(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = message.from_user.id
+    
+    paid_list = get_paid_tariffs(user_id)
+    
+    if paid_list:
+        subs_list = []
+        for tariff_key in paid_list:
+            if tariff_key == "test":
+                name = TEST_TARIFF['name_ru'] if lang == "ru" else TEST_TARIFF['name_en']
+                subs_list.append(LANG[lang]["subs_list_item"].format(name=name))
+            elif tariff_key in TARIFFS:
+                name = TARIFFS[tariff_key]['name_ru'] if lang == "ru" else TARIFFS[tariff_key]['name_en']
+                subs_list.append(LANG[lang]["subs_list_item"].format(name=name))
+        
+        if subs_list:
+            text = LANG[lang]["subs_menu"].format(list="\n".join(subs_list))
+            await message.answer(text)
+            return
+    
+    await message.answer(LANG[lang]["no_subs"])
+
+# ==================================================
+# ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ
+# ==================================================
+
+@dp.callback_query(F.data == "back_to_prices")
+async def back_to_prices(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
+
+@dp.callback_query(F.data == "show_paki")
+async def show_paki(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_paki_keyboard(lang))
+
+@dp.callback_query(F.data.startswith("tariff_"))
+async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("tariff_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+    
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} 🇷🇺RUB</s> → {new_price} 🇷🇺RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} 🇷🇺RUB"
+    
+    is_paid = is_tariff_paid(user_id, tariff_key)
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.edit_text(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("enter_promo_"))
+async def enter_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("enter_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.update_data(current_tariff=tariff_key)
+    await callback.message.edit_text(
+        LANG[lang]["enter_promo"],
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=LANG[lang]["btn_cancel"], callback_data=f"cancel_promo_{tariff_key}")]])
+    )
+    await state.set_state(PromoStates.waiting_for_promo)
+
+@dp.message(PromoStates.waiting_for_promo)
+async def process_promo(message: Message, state: FSMContext):
+    promo_code = message.text.strip().upper()
+    data = await state.get_data()
+    tariff_key = data.get("current_tariff")
+    lang = await get_lang(state)
+    
+    if not tariff_key or tariff_key not in TARIFFS:
+        await state.clear()
+        await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
+        return
+
+    if promo_code in PROMO_CODES:
+        discount = PROMO_CODES[promo_code]
+        await state.update_data(discount=discount)
+        
+        tariff = TARIFFS[tariff_key]
+        name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+        new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+        
+        text = LANG[lang]["promo_success"].format(code=promo_code, discount=discount, name=name, old_rub=tariff['price_rub'], new_rub=new_rub)
+        await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+        await state.clear()
+    else:
+        await message.answer(LANG[lang]["promo_fail"])
+
+@dp.callback_query(F.data.startswith("cancel_promo_"))
+async def cancel_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("cancel_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.clear()
+    await callback.message.delete()
+    tariff = TARIFFS[tariff_key]
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> -> {new_price} RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} RUB"
+
+    is_paid = is_tariff_paid(user_id, tariff_key)
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.answer(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
 @dp.callback_query(F.data.startswith("choose_pay_"))
 async def choose_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
     tariff_key = callback.data.replace("choose_pay_", "")
     
     if tariff_key not in TARIFFS:
@@ -652,6 +1095,8 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("pay_rub_"))
 async def process_rub_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
     tariff_key = callback.data.replace("pay_rub_", "")
     
     if tariff_key not in TARIFFS:
@@ -723,10 +1168,11 @@ async def process_rub_payment(callback: CallbackQuery, state: FSMContext):
         ]),
         disable_web_page_preview=True
     )
-    await callback.answer()
 
 @dp.callback_query(F.data.startswith("pay_stars_"))
 async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
     tariff_key = callback.data.replace("pay_stars_", "")
     
     if tariff_key not in TARIFFS:
@@ -767,10 +1213,11 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
 """
     
     await callback.message.edit_text(text)
-    await callback.answer()
 
 @dp.callback_query(F.data.startswith("pay_crypto_"))
 async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
     tariff_key = callback.data.replace("pay_crypto_", "")
     
     if tariff_key not in TARIFFS:
@@ -848,7 +1295,71 @@ async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         disable_web_page_preview=True
     )
+
+@dp.callback_query(F.data.startswith("refresh_link_"))
+async def refresh_link(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    
+    tariff_key = callback.data.replace("refresh_link_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    # Соответствие тарифов автосервису
+    auto_tariff_names = {
+        "2": "Шиномонтаж",
+        "3": "Ремонт тормозов",
+        "4": "Замена ремня ГРМ",
+        "5": "Ремонт АКПП",
+        "6": "Диагностика двигателя",
+        "7": "Проверка подвески",
+        "9": "Комплексное ТО",
+        "10": "Капитальный ремонт",
+        "11": "Регулировка фар",
+        "14": "Замена фильтров",
+        "15": "Замена масла",
+    }
+    
+    auto_name = auto_tariff_names.get(tariff_key, "Комплексное ТО")
+    
+    text = f"""
+💳 <b>Оплата через СБП</b>
+
+📋 <b>{tariff['name_ru']}</b>
+📅 Срок: {tariff['duration_ru']}
+💰 Цена: {final_price} RUB
+
+📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
+
+1️⃣ Перейдите в бот для оплаты:
+👉 @CenterDrombot
+
+2️⃣ Купите там услугу <b>«{auto_name}»</b> за {final_price}₽
+
+3️⃣ После оплаты сделайте скриншот чека
+
+4️⃣ Отправьте скриншот @kasgd
+
+5️⃣ Укажите название тарифа
+
+⏰ Время ожидания: 5-20 минут
+"""
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚗 Перейти в бот оплаты", url="https://t.me/CenterDrombot")],
+            [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
+        ])
+    )
 
 # ==================================================
 # ЗАПУСК
