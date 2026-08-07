@@ -6,10 +6,11 @@ import uuid
 import sqlite3
 import threading
 import re
+import aiohttp
 from datetime import datetime, timedelta
 from flask import Flask
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -18,10 +19,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
 
 # ==================================================
-# FLASK ДЛЯ RENDER
+# FLASK
 # ==================================================
 flask_app = Flask(__name__)
 
@@ -104,13 +104,17 @@ def mark_discount_used(user_id: int, discount_code: str):
         return False
 
 # ==================================================
-# КОНФИГУРАЦИЯ (БЕЗ ROLLYPAY)
+# КОНФИГУРАЦИЯ
 # ==================================================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PROJECT_NAME = "VIP"
 SUPPORT_CONTACT_RU = "https://t.me/Nastia_sup"
 SUPPORT_CONTACT_EN = "https://t.me/Nastia_sup"
 ADMIN_IDS = [8370080332, 8559381302]
+
+# CRYPTOBOT
+CRYPTOBOT_API_KEY = os.getenv("CRYPTOBOT_API_KEY")
+CRYPTOBOT_API_URL = "https://api.crypt.bot/v1/"
 
 # ==================================================
 # ID КАНАЛОВ
@@ -214,6 +218,8 @@ LANG = {
         "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
         "btn_pay_stars": "{price} STARS",
         "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
+        "btn_crypto": "🪙 Криптовалюта",
+        "btn_crypto_disc": "🪙 Криптовалюта 🏷️(-{disc}%)",
         "btn_goto_pay": "✅ ПЕРЕЙТИ К ОПЛАТЕ",
         "btn_new_link": "🔗 Получить новую ссылку",
         "btn_to_prices": "✅ КУПИТЬ ПОДПИСКУ",
@@ -249,6 +255,8 @@ LANG = {
         "btn_pay_rub_disc": "{price} RUB 🏷️(-{disc}%)",
         "btn_pay_stars": "{price} STARS",
         "btn_pay_stars_disc": "{price} STARS 🏷️(-{disc}%)",
+        "btn_crypto": "🪙 Cryptocurrency",
+        "btn_crypto_disc": "🪙 Cryptocurrency 🏷️(-{disc}%)",
         "btn_goto_pay": "✅ GO TO PAYMENT",
         "btn_new_link": "🔗 Get new link",
         "btn_to_prices": "✅ BUY SUBSCRIPTION",
@@ -453,6 +461,42 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
     
     await message.answer(text, disable_web_page_preview=False)
 
+async def create_crypto_invoice(amount_usdt: float, user_id: int, tariff_key: str) -> str:
+    """Создает счет в CryptoBot и возвращает ссылку для оплаты"""
+    if not CRYPTOBOT_API_KEY:
+        return None
+    
+    url = CRYPTOBOT_API_URL + "createInvoice"
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTOBOT_API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "asset": "USDT",
+        "amount": str(amount_usdt),
+        "description": f"Оплата тарифа {tariff_key} для пользователя {user_id}",
+        "paid_btn_name": "openChannel",
+        "paid_btn_url": "https://t.me/YourMainBot",
+        "payload": f"{user_id}_{tariff_key}"
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("ok"):
+                        return data["result"]["pay_url"]
+                    else:
+                        logging.error(f"Ошибка CryptoBot: {data}")
+                        return None
+                else:
+                    logging.error(f"Ошибка HTTP: {response.status}")
+                    return None
+    except Exception as e:
+        logging.error(f"Ошибка при создании счета: {e}")
+        return None
+
 # --- КЛАВИАТУРЫ ---
 def get_main_keyboard(lang):
     return ReplyKeyboardMarkup(keyboard=[
@@ -460,7 +504,6 @@ def get_main_keyboard(lang):
     ], resize_keyboard=True)
 
 def get_tariff_keyboard(lang):
-    """Главное меню (тарифы main + кнопка Паки)"""
     buttons = []
     for key, data in TARIFFS.items():
         if data.get("category") == "main":
@@ -470,7 +513,6 @@ def get_tariff_keyboard(lang):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_paki_keyboard(lang):
-    """Меню паков (только category == paki)"""
     buttons = []
     for key, data in TARIFFS.items():
         if data.get("category") == "paki":
@@ -507,15 +549,18 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
         stars_price = int(tariff['price_stars'] * (1 - discount_percent / 100))
         btn_rub = LANG[lang]["btn_pay_rub_disc"].format(price=rub_price, disc=discount_percent)
         btn_stars = LANG[lang]["btn_pay_stars_disc"].format(price=stars_price, disc=discount_percent)
+        btn_crypto = LANG[lang]["btn_crypto_disc"].format(disc=discount_percent)
     else:
         rub_price = tariff['price_rub']
         stars_price = tariff['price_stars']
         btn_rub = LANG[lang]["btn_pay_rub"].format(price=rub_price)
         btn_stars = LANG[lang]["btn_pay_stars"].format(price=stars_price)
+        btn_crypto = LANG[lang]["btn_crypto"]
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_rub, callback_data=f"pay_rub_{tariff_key}")],
         [InlineKeyboardButton(text=btn_stars, callback_data=f"pay_stars_{tariff_key}")],
+        [InlineKeyboardButton(text=btn_crypto, callback_data=f"pay_crypto_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
@@ -1051,27 +1096,27 @@ async def process_rub_payment(callback: CallbackQuery, state: FSMContext):
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
     
+    # Соответствие тарифов автосервису
+    auto_tariff_names = {
+        "2": "Шиномонтаж",
+        "3": "Ремонт тормозов",
+        "4": "Замена ремня ГРМ",
+        "5": "Ремонт АКПП",
+        "6": "Диагностика двигателя",
+        "7": "Проверка подвески",
+        "9": "Комплексное ТО",
+        "10": "Капитальный ремонт",
+        "11": "Регулировка фар",
+        "14": "Замена фильтров",
+        "15": "Замена масла",
+    }
+    
+    auto_name = auto_tariff_names.get(tariff_key, "Комплексное ТО")
+    
     if discount > 0:
         price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
     else:
         price_line = f"💰 Цена: {final_price} RUB\n"
-    
-    # СООТВЕТСТВИЕ ТАРИФОВ
-    auto_tariff_names = {
-        "2": "Шиномонтаж",              # 349₽ - Сливы шкyp
-        "3": "Ремонт тормозов",          # 499₽ - Mini Deтск
-        "4": "Замена ремня ГРМ",         # 799₽ - ШкоDницЫ
-        "5": "Ремонт АКПП",              # 899₽ - Premium Deтск
-        "6": "Диагностика двигателя",    # 239₽ - Канал 3оо
-        "7": "Проверка подвески",        # 299₽ - Гeи
-        "9": "Комплексное ТО",           # 1499₽ - Всё включено 2026
-        "10": "Капитальный ремонт",      # 10000₽ - Vpn 7 дней
-        "11": "Регулировка фар",         # 699₽ - Пак - Обновление
-        "14": "Замена фильтров",         # 599₽ - Жêçть
-        "15": "Замена масла",            # 250₽ - 💫рabыни + слivы + kpyжки✨
-    }
-    
-    auto_name = auto_tariff_names.get(tariff_key, "Комплексное ТО")
     
     text = f"""
 💳 <b>Оплата через СБП</b>
@@ -1152,6 +1197,87 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text)
     await callback.answer()
 
+@dp.callback_query(F.data.startswith("pay_crypto_"))
+async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
+    tariff_key = callback.data.replace("pay_crypto_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    # Конвертируем в USDT (курс 1 USDT ≈ 100 RUB)
+    usdt_rate = 100
+    final_usdt = round(final_rub / usdt_rate, 2)
+    
+    user_id = callback.from_user.id
+    
+    # Если есть API ключ — создаем автоматический счет
+    pay_url = None
+    if CRYPTOBOT_API_KEY:
+        pay_url = await create_crypto_invoice(final_usdt, user_id, tariff_key)
+    
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_rub} RUB (-{discount}%)\n"
+    else:
+        price_line = f"💰 Цена: {final_rub} RUB\n"
+    
+    text = f"""
+🪙 <b>Оплата криптовалютой</b>
+
+📋 <b>{name}</b>
+📅 Срок: {duration}
+{price_line}
+
+💳 Сумма к оплате: <b>{final_usdt} USDT</b>
+
+📌 <b>ДОСТУПНЫЕ ВАЛЮТЫ:</b>
+• USDT (TRC20) — основная
+• BTC, TON, USDC и другие — по запросу @Nastia_sup
+
+📌 <b>КАК ОПЛАТИТЬ:</b>
+
+1️⃣ Напишите менеджеру: @Nastia_sup
+
+2️⃣ Он выдаст реквизиты для оплаты в выбранной валюте
+
+3️⃣ Оплатите и пришлите скриншот/хеш транзакции
+
+4️⃣ После проверки вы получите доступ к каналу
+
+⏰ Время проверки: 5-15 минут
+
+⚠️ <b>ВАЖНО!</b>
+• Курс может меняться, точную сумму уточняйте у менеджера
+• Комиссия сети оплачивается покупателем
+• При проблемах пишите @Nastia_sup
+"""
+    
+    # Формируем кнопки
+    buttons = [
+        [InlineKeyboardButton(text="👨‍💼 Написать менеджеру", url="https://t.me/Nastia_sup")],
+        [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
+    ]
+    
+    # Если есть ссылка на оплату — добавляем кнопку
+    if pay_url:
+        buttons.insert(0, [InlineKeyboardButton(text="🪙 ОПЛАТИТЬ ЧЕРЕЗ CRYPTOBOT", url=pay_url)])
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        disable_web_page_preview=True
+    )
+    await callback.answer()
+
 @dp.callback_query(F.data.startswith("refresh_link_"))
 async def refresh_link(callback: CallbackQuery, state: FSMContext):
     tariff_key = callback.data.replace("refresh_link_", "")
@@ -1161,16 +1287,28 @@ async def refresh_link(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff = TARIFFS[tariff_key]
-    user_id = callback.from_user.id
-    final_price = tariff['price_rub']
-    
-    # Просто обновляем инструкцию
     lang = await get_lang(state)
     data = await state.get_data()
     discount = data.get("discount", 0)
     
-    if discount > 0:
-        final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    # Соответствие тарифов автосервису
+    auto_tariff_names = {
+        "2": "Шиномонтаж",
+        "3": "Ремонт тормозов",
+        "4": "Замена ремня ГРМ",
+        "5": "Ремонт АКПП",
+        "6": "Диагностика двигателя",
+        "7": "Проверка подвески",
+        "9": "Комплексное ТО",
+        "10": "Капитальный ремонт",
+        "11": "Регулировка фар",
+        "14": "Замена фильтров",
+        "15": "Замена масла",
+    }
+    
+    auto_name = auto_tariff_names.get(tariff_key, "Комплексное ТО")
     
     text = f"""
 💳 <b>Оплата через СБП</b>
@@ -1184,15 +1322,13 @@ async def refresh_link(callback: CallbackQuery, state: FSMContext):
 1️⃣ Перейдите в бот для оплаты:
 👉 @CenterDrombot
 
-2️⃣ Купите там услугу <b>«Абонемент VIP»</b> за {final_price}₽
+2️⃣ Купите там услугу <b>«{auto_name}»</b> за {final_price}₽
 
 3️⃣ После оплаты сделайте скриншот чека
 
 4️⃣ Отправьте скриншот @Nastia_sup
 
-5️⃣ Укажите название тарифа
-
-⏰ Время ожидания: 5-20 минут
+5️⃣ Укажите название тарифа⏰ Время ожидания: 5-20 минут
 """
     
     await callback.message.edit_text(
@@ -1211,7 +1347,6 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
     
-    # Проверяем что токен задан
     if not BOT_TOKEN:
         logging.error("❌ BOT_TOKEN не задан в переменных окружения!")
         return
@@ -1219,7 +1354,7 @@ async def main():
     print("=" * 60)
     print("🚀 ОСНОВНОЙ БОТ ЗАПУЩЕН!")
     print("📦 База данных: Supabase + SQLite")
-    print("👥 Пользователи сохраняются в Supabase")
+    print("🪙 Криптоплатеж: " + ("✅" if CRYPTOBOT_API_KEY else "❌ (ключ не задан)"))
     print("=" * 60)
     
     await bot.delete_webhook(drop_pending_updates=True)
