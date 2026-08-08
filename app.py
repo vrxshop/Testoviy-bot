@@ -298,9 +298,9 @@ LANG = {
         "promo_success": "✅ Промокод <b>{code}</b> активирован! Скидка {discount}% 🔥\n\n📋 <b>{name}</b>\n💰 Цена: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nВыберите валюту для оплаты.",
         "promo_fail": "❌ Промокод не найден. Попробуйте еще раз (или нажмите ◀️ Отмена).",
         "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите способ оплаты",
-        "pay_card": "💳 <b>Оплата на карту</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n{price_line}\n\nСпособ оплаты: Перевод на карту\n\n💰 К оплате: <b>{final} RUB</b>\n🆔 Ваш ID: <code>{user_id}</code>\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 <b>2204230493324217</b> <i>(нажмите чтобы скопировать)</i>\n🏧 <b>Банк:</b> Уралсиб\n<b>Получатель:</b> Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку <b>«Я оплатил»</b>\n❕ Если вы ждете больше 12 часов, напишите администратору",
+        "pay_card": "💳 <b>Оплата на карту</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n{price_line}\n\nСпособ оплаты: Перевод на карту\n\n💰 К оплате: {final} RUB\n🆔 Ваш ID: {user_id}\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 2200190284092510\n\n🏧 Банк: Уралсиб\nПолучатель: Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку «Я оплатил»\n❕ Если вы ждете больше 12 часов, напишите администратору",
         "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@kasgd</a>\n\nкурс:\n1 ⭐ - 1 рубль",
-        "pay_crypto_choose": "🪙 <b>Выберите криптовалюту для оплаты</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n💰 Цена: {price_line}\n\nВыберите удобную для вас криптовалюту:",
+        "pay_crypto_choose": "🪙 <b>Выберите монету:</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n💰 Цена: {price_line}",
         "pay_crypto_invoice": "✅ <b>Счёт на оплату сформирован.</b>\n\nДоступы к закрытым сообществам будут открыты, как только вы оплатите его.\n\n📋 <b>{name}</b>\n💰 Сумма: <b>{amount} {asset}</b>\n\nНажмите кнопку ниже для оплаты:",
         "crypto_payment_success": "✅ <b>Оплата прошла успешно!</b>\n\nДля получения доступа пишите @kasgd\n❗️ Пишите сразу тариф, который брали, и чек оплаты",
         "refresh_link": "♻️ <i>Ссылка обновлена!</i>",
@@ -335,7 +335,8 @@ LANG = {
         "i_paid_confirm": "💁🏻‍♂️ Оплатили?\n\n👌🏻 Тогда отправьте сюда картинкой (не документом!) квитанцию платежа: скриншот или фото. Иначе бот не узнает что вы оплатили\n\n📌 На квитанции должны быть четко видны: дата, время и сумма платежа. Проверка может занимать до дня.\n🔒 Никто ваши чеки не увидит, Telegram не хранит их.\n\n⚠️ За спам вы можете быть заблокированы!",
         "payment_receipt_received": "✅ Ваш чек получен! Администратор проверит его в ближайшее время.",
         "new_payment_request": "🆕 <b>Новая заявка на оплату!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n💰 Сумма: {amount} RUB\n📝 Сообщение: {message_text}\n\n{media_info}",
-        "admin_panel": "⚙️ <b>Админ-панель</b>\n\n👥 Всего пользователей: {user_count}\n⏳ Ожидают проверки: {pending_count}\n\nВыберите действие:"
+        "admin_panel": "⚙️ <b>Админ-панель</b>\n\n👥 Всего пользователей: {user_count}\n⏳ Ожидают проверки: {pending_count}\n\nВыберите действие:",
+        "crypto_error": "❌ Ошибка создания счета. Попробуйте позже или выберите другой способ оплаты."
     },
     "en": {
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
@@ -349,9 +350,9 @@ LANG = {
         "promo_success": "✅ Promo code <b>{code}</b> activated! {discount}% discount 🔥\n\n📋 <b>{name}</b>\n💰 Price: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nChoose a currency for payment.",
         "promo_fail": "❌ Promo code not found. Try again (or press ◀️ Cancel).",
         "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose payment method",
-        "pay_card": "💳 <b>Card payment</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n{price_line}\n\nPayment method: Bank card\n\n💰 Amount: <b>{final} RUB</b>\n🆔 Your ID: <code>{user_id}</code>\n\n📌 <b>Payment details:</b>\n\n💳 <b>2204230493324217</b> <i>(tap to copy)</i>\n🏧 <b>Bank:</b> Uralsib\n<b>Recipient:</b> Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
+        "pay_card": "💳 <b>Card payment</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n{price_line}\n\nPayment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
         "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@kasgd</a>\n\nRate:\n1 ⭐ - 1 ruble",
-        "pay_crypto_choose": "🪙 <b>Choose cryptocurrency</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n💰 Price: {price_line}\n\nChoose your preferred cryptocurrency:",
+        "pay_crypto_choose": "🪙 <b>Choose coin:</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n💰 Price: {price_line}",
         "pay_crypto_invoice": "✅ <b>Invoice created.</b>\n\nAccess to closed communities will be opened as soon as you pay it.\n\n📋 <b>{name}</b>\n💰 Amount: <b>{amount} {asset}</b>\n\nClick the button below to pay:",
         "crypto_payment_success": "✅ <b>Payment successful!</b>\n\nFor access write @kasgd\n❗️ Write the tariff you purchased and payment receipt",
         "refresh_link": "♻️ <i>Link refreshed!</i>",
@@ -386,7 +387,8 @@ LANG = {
         "i_paid_confirm": "💁🏻‍♂️ Paid?\n\n👌🏻 Then send a payment receipt as an image (not document!): screenshot or photo. Otherwise the bot won't know you paid.\n\n📌 The receipt must clearly show: date, time and payment amount. Verification may take up to a day.\n🔒 No one will see your receipts, Telegram doesn't store them.\n\n⚠️ You may be blocked for spam!",
         "payment_receipt_received": "✅ Your receipt has been received! Administrator will check it shortly.",
         "new_payment_request": "🆕 <b>New payment request!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n💰 Amount: {amount} RUB\n📝 Message: {message_text}\n\n{media_info}",
-        "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n⏳ Pending: {pending_count}\n\nSelect action:"
+        "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n⏳ Pending: {pending_count}\n\nSelect action:",
+        "crypto_error": "❌ Error creating invoice. Try again later or choose another payment method."
     }
 }
 
@@ -1291,7 +1293,7 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("copy_card_"))
 async def copy_card(callback: CallbackQuery):
-    await callback.answer("💳 Номер карты скопирован!\n\n2204230493324217", show_alert=True)
+    await callback.answer("💳 Номер карты скопирован!\n\n2200190284092510", show_alert=True)
 
 @dp.callback_query(F.data.startswith("i_paid_"))
 async def i_paid(callback: CallbackQuery, state: FSMContext):
@@ -1485,7 +1487,7 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     )
 
 # ==================================================
-# КРИПТОВАЛЮТА - АВТОМАТИЧЕСКИЕ СЧЕТА
+# КРИПТОВАЛЮТА
 # ==================================================
 
 @dp.callback_query(F.data.startswith("pay_crypto_"))
@@ -1542,18 +1544,15 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Конвертируем в USDT (курс 80 RUB = 1 USDT)
     usdt_rate = 80
     final_usdt = round_to_half(final_rub / usdt_rate)
     
-    # Создаем инвойс в CryptoBot
     invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "USDT")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        # Сохраняем инвойс в БД
         save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "USDT")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
@@ -1571,7 +1570,7 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await callback.message.edit_text(
-            "❌ Ошибка создания счета. Попробуйте позже или выберите другой способ оплаты.",
+            LANG[lang]["crypto_error"],
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
@@ -1596,11 +1595,9 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Конвертируем в TON (примерный курс 150 RUB = 1 TON)
     ton_rate = 150
     final_ton = round_to_half(final_rub / ton_rate)
     
-    # Создаем инвойс в CryptoBot для TON
     invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
     
     if invoice_data:
@@ -1624,7 +1621,7 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await callback.message.edit_text(
-            "❌ Ошибка создания счета. Попробуйте позже или выберите другой способ оплаты.",
+            LANG[lang]["crypto_error"],
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
@@ -1649,11 +1646,9 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Конвертируем в BTC (примерный курс 4,000,000 RUB = 1 BTC)
     btc_rate = 4000000
     final_btc = round(final_rub / btc_rate, 8)
     
-    # Создаем инвойс в CryptoBot для BTC
     invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
     
     if invoice_data:
@@ -1677,7 +1672,7 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
         )
     else:
         await callback.message.edit_text(
-            "❌ Ошибка создания счета. Попробуйте позже или выберите другой способ оплаты.",
+            LANG[lang]["crypto_error"],
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
@@ -1711,7 +1706,6 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
 
 @flask_app.route('/crypto_webhook', methods=['POST'])
 def crypto_webhook():
-    """Обработчик вебхука от CryptoBot"""
     try:
         data = request.get_json()
         logging.info(f"Получен вебхук: {data}")
@@ -1719,14 +1713,12 @@ def crypto_webhook():
         if data.get("update_type") == "invoice_paid":
             invoice_id = data.get("invoice_id", "")
             
-            # Ищем инвойс в БД
             invoice = get_crypto_invoice(invoice_id)
             if invoice:
                 user_id = invoice[1]
                 tariff_key = invoice[2]
                 mark_invoice_paid(invoice_id)
                 
-                # Отправляем сообщение пользователю об успешной оплате
                 asyncio.create_task(send_crypto_success(user_id, tariff_key))
         
         return "OK", 200
@@ -1735,7 +1727,6 @@ def crypto_webhook():
         return "Error", 500
 
 async def send_crypto_success(user_id: int, tariff_key: str):
-    """Отправляет пользователю сообщение об успешной крипто-оплате"""
     try:
         lang = "ru"
         text = LANG[lang]["crypto_payment_success"]
