@@ -140,9 +140,9 @@ CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
 CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
 
 # КУРСЫ
-USDT_RATE = 80  # 1 USDT = 80 RUB
-TON_RATE = 150  # 1 TON = 150 RUB (примерный курс)
-BTC_RATE = 4000000  # 1 BTC = 4,000,000 RUB (примерный курс)
+USDT_RATE = 80
+TON_RATE = 150
+BTC_RATE = 4000000
 
 # ==================================================
 # ID КАНАЛОВ
@@ -671,6 +671,10 @@ def round_to_half(value: float) -> float:
     """Округляет до ближайшего 0.5"""
     return round(value * 2) / 2
 
+# ==================================================
+# ОБЩАЯ ФУНКЦИЯ ДЛЯ ВЫБОРА ОПЛАТЫ
+# ==================================================
+
 async def choose_payment_logic(callback: CallbackQuery, state: FSMContext, tariff_key: str):
     tariff = TARIFFS[tariff_key]
     
@@ -738,7 +742,7 @@ def get_tariff_details_keyboard(tariff_key, lang, user_id):
     
     if not is_paid:
         buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay"], callback_data=f"choose_pay_{tariff_key}")])
-        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay_for_friend"], callback_data=f"pay_for_friend_{tariff_key}")])  # <-- ЭТА КНОПКА
+        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay_for_friend"], callback_data=f"pay_for_friend_{tariff_key}")])
     
     buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
     
@@ -1292,34 +1296,9 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
         return
     
     await choose_payment_logic(callback, state, tariff_key)
-    
-    if tariff['price_rub'] == 0:
-        lang = await get_lang(state)
-        user_id = callback.from_user.id
-        await callback.message.delete()
-        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
-        await callback.answer("✅ Доступ открыт!")
-        return
-    
-    lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
-    
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
-    
-    if discount > 0:
-        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
-        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
-    else:
-        show_rub = tariff['price_rub']
-        price_text = f"{show_rub} RUB"
-    
-    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
-    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
 # ==================================================
-# ОПЛАТА ДЛЯ ДРУГА
+# ОПЛАТА ДЛЯ ДРУГА (РАБОТАЕТ ТАК ЖЕ)
 # ==================================================
 
 @dp.callback_query(F.data.startswith("pay_for_friend_"))
@@ -1332,69 +1311,10 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    # Просто вызываем ту же логику что и обычная оплата
     await choose_payment_logic(callback, state, tariff_key)
 
-@dp.message(F.text, state="waiting_for_friend_id")
-async def process_friend_payment(message: Message, state: FSMContext):
-    data = await state.get_data()
-    tariff_key = data.get("pay_for_friend_tariff")
-    lang = await get_lang(state)
-    
-    if not tariff_key or tariff_key not in TARIFFS:
-        await state.clear()
-        await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
-        return
-    
-    # Парсим ID или username
-    friend_input = message.text.strip()
-    friend_id = None
-    
-    # Если это username
-    if friend_input.startswith("@"):
-        try:
-            chat = await bot.get_chat(friend_input)
-            friend_id = chat.id
-        except:
-            await message.answer("❌ Пользователь не найден. Попробуйте еще раз или введите ID.")
-            return
-    else:
-        try:
-            friend_id = int(friend_input)
-        except:
-            await message.answer("❌ Неверный формат. Введите ID или @username.")
-            return
-    
-    # Проверяем что пользователь существует
-    try:
-        friend = await bot.get_chat(friend_id)
-        friend_name = friend.first_name or "Пользователь"
-    except:
-        await message.answer("❌ Пользователь не найден. Проверьте правильность ID.")
-        return
-    
-    # Сохраняем оплату для друга
-    add_paid_tariff(friend_id, tariff_key)
-    
-    # Отправляем ссылку другу
-    if tariff_key in CHANNEL_IDS:
-        chat_id = CHANNEL_IDS[tariff_key]
-        link = await create_one_time_link(chat_id)
-        if link:
-            text = LANG[lang]["payment_success"].format(link=link)
-            try:
-                await bot.send_message(friend_id, f"🎁 Вам оплатили тариф! {text}")
-            except:
-                await message.answer("⚠️ Не удалось отправить сообщение пользователю. Возможно, он заблокировал бота.")
-    else:
-        await message.answer("✅ Оплата за друга сохранена. Но канал для этого тарифа не настроен.")
-        return
-    
-    await message.answer(f"✅ Тариф оплачен для @{friend.username if friend.username else friend_id}!")
-    await state.clear()
-
 # ==================================================
-# ОПЛАТА НА КАРТУ - ИСПРАВЛЕН ТЕКСТ
+# ОПЛАТА НА КАРТУ
 # ==================================================
 
 @dp.callback_query(F.data.startswith("pay_card_"))
@@ -1627,7 +1547,7 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     )
 
 # ==================================================
-# КРИПТОВАЛЮТА - ИСПРАВЛЕНЫ КУРСЫ (1 USDT = 80 RUB)
+# КРИПТОВАЛЮТА
 # ==================================================
 
 @dp.callback_query(F.data.startswith("pay_crypto_"))
@@ -1668,7 +1588,6 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # 1 USDT = 80 RUB
     final_usdt = round_to_half(final_rub / USDT_RATE)
     
     invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "USDT")
@@ -1719,7 +1638,6 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # 1 TON = 150 RUB
     final_ton = round_to_half(final_rub / TON_RATE)
     
     invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
@@ -1770,7 +1688,6 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # 1 BTC = 4,000,000 RUB
     final_btc = round(final_rub / BTC_RATE, 8)
     
     invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
@@ -1827,28 +1744,6 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
 # ==================================================
 # ВЕБХУК ДЛЯ CRYPTOBOT
 # ==================================================
-
-@flask_app.route('/crypto_webhook', methods=['POST'])
-def crypto_webhook():
-    try:
-        data = request.get_json()
-        logging.info(f"Получен вебхук: {data}")
-        
-        if data.get("update_type") == "invoice_paid":
-            invoice_id = data.get("invoice_id", "")
-            
-            invoice = get_crypto_invoice(invoice_id)
-            if invoice:
-                user_id = invoice[1]
-                tariff_key = invoice[2]
-                mark_invoice_paid(invoice_id)
-                
-                asyncio.create_task(send_crypto_success(user_id, tariff_key))
-        
-        return "OK", 200
-    except Exception as e:
-        logging.error(f"Ошибка вебхука: {e}")
-        return "Error", 500
 
 async def send_crypto_success(user_id: int, tariff_key: str):
     try:
