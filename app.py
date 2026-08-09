@@ -1174,6 +1174,8 @@ async def cmd_start(message: Message, state: FSMContext):
     first_name = message.from_user.first_name or "Пользователь"
     username = message.from_user.username
     
+    logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
+    
     add_user(user_id, first_name, username)
     
     # Проверяем, может это активация ключа
@@ -1199,67 +1201,15 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(welcome_text, disable_web_page_preview=True)
     
     menu_text = LANG[lang]["main_menu_text"]
-    await message.answer(menu_text, reply_markup=get_tariff_keyboard(lang))
-
-async def process_key_activation(message: Message, key_param: str, state: FSMContext):
-    """Обработка активации ключа"""
-    user_id = message.from_user.id
-    username = message.from_user.username or "без username"
-    lang = await get_lang(state)
     
-    # Проверяем ключ в базе
-    key_data = get_subscription_key(key_param)
-    
-    if not key_data:
-        await message.answer(LANG[lang]["key_not_found"])
-        return
-    
-    # Получаем данные ключа
-    tariff_key = key_data['tariff_key']
-    duration_days = key_data['duration_days']
-    
-    tariff = TARIFFS.get(tariff_key)
-    tariff_name = get_tariff_name(tariff_key, lang)
-    
-    # Проверяем есть ли уже подписка на этот тариф
-    existing_sub = get_subscription_by_tariff(user_id, tariff_key)
-    
-    if existing_sub:
-        # Продлеваем
-        if duration_days is not None:
-            extend_subscription(user_id, tariff_key, duration_days)
-            expires_at = datetime.now() + timedelta(days=duration_days)
-        else:
-            expires_at = None
-    else:
-        # Создаем новую подписку
-        add_subscription(user_id, tariff_key, duration_days)
-        sub = get_subscription_by_tariff(user_id, tariff_key)
-        expires_at = sub['expires_at'] if sub else None
-    
-    # Удаляем ключ
-    delete_subscription_key(key_param)
-    
-    # Отправляем сообщение пользователю
-    text = LANG[lang]["key_activated"].format(
-        tariff_name=tariff_name,
-        expires_at=format_date(expires_at)
+    # ВОТ ЗДЕСЬ ДОЛЖНА БЫТЬ КЛАВИАТУРА!
+    await message.answer(
+        menu_text, 
+        reply_markup=get_main_keyboard(lang)  # <-- ЭТО ОТВЕЧАЕТ ЗА КНОПКИ
     )
-    await message.answer(text)
     
-    # Уведомляем админов
-    user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
-    admin_text = LANG[lang]["key_activated_admin"].format(
-        user_link=user_link,
-        user_id=user_id,
-        tariff_name=tariff_name,
-        expires_at=format_date(expires_at)
-    )
-    for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, admin_text)
-        except Exception as e:
-            logging.error(f"Ошибка отправки уведомления админу: {e}")
+    # Если хочешь еще и тарифы показать:
+    # await message.answer(LANG[lang]["prices_menu"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
