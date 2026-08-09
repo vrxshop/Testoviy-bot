@@ -558,6 +558,10 @@ CHANNEL_IDS = {
 # ==================================================
 LANG = {
     "ru": {
+        "btn_prices": "💵 Тарифы",
+        "btn_subs": "⏳ Мои подписки",
+        "prices_menu": "📋 <b>Прайс</b>\n\nВыберите тариф, чтобы узнать подробности и оформить покупку.",
+        "no_subs": "⌛️ <b>У Вас нет действующих подписок.</b>\n\nВыберите тариф, чтобы оформить доступ.",
         "start_promo": "🎉 <b>Промокод {code} активирован! Скидка {discount}%!</b>",
         "start_welcome": "👋 Привет, {name}!\n\n<a href=\"{offer}\">Пользовательское соглашение</a>\n<a href=\"{policy}\">Политика конфиденциальности</a>",
         "prices_menu": "📋 <b>Прайс</b>\n\nВыберите тариф, чтобы узнать подробности и оформить покупку.",
@@ -624,6 +628,10 @@ LANG = {
         "key_activated_admin": "🔑 <b>Активирован ключ!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n📅 Действует до: {expires_at}"
     },
     "en": {
+        "btn_prices": "💵 Prices",
+        "btn_subs": "⏳ My subscriptions",
+        "prices_menu": "📋 <b>Prices</b>\n\nSelect a tariff to view details and make a purchase.",
+        "no_subs": "⌛️ <b>You don't have any active subscriptions.</b>\n\nSelect a tariff to get access.",
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
         "start_welcome": "👋 Hello, {name}!\n\n<a href=\"{offer}\">Terms of Service</a>\n<a href=\"{policy}\">Privacy Policy</a>",
         "prices_menu": "📋 <b>Prices</b>\n\nSelect a tariff to view details and make a purchase.",
@@ -1198,17 +1206,17 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Тех.поддержка: @kasgd"""
     
+    # ПЕРВОЕ сообщение - приветствие
     await message.answer(welcome_text, disable_web_page_preview=True)
     
+    # ВТОРОЕ сообщение - меню + тарифы
     menu_text = LANG[lang]["main_menu_text"]
-    
-    # ВОТ ЗДЕСЬ ДОЛЖНА БЫТЬ КЛАВИАТУРА!
     await message.answer(
-        menu_text, 
-        reply_markup=get_main_keyboard(lang)  # <-- ЭТО ОТВЕЧАЕТ ЗА КНОПКИ
+        menu_text,
+        reply_markup=get_main_keyboard(lang)
     )
     
-    # Если хочешь еще и тарифы показать:
+    # ТРЕТЬЕ сообщение - тарифы (если хочешь сразу показывать)
     # await message.answer(LANG[lang]["prices_menu"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.message(Command("admin"))
@@ -1914,6 +1922,28 @@ async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
         )
     
     await callback.message.edit_text(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
+async def show_prices(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    await message.answer(
+        LANG[lang]["prices_menu"],
+        reply_markup=get_tariff_keyboard(lang)
+    )
+
+
+@dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
+async def show_subscriptions(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = message.from_user.id
+    
+    subscriptions = get_active_subscriptions(user_id)
+    
+    if subscriptions:
+        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
+        await message.answer(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+    else:
+        await message.answer(LANG[lang]["no_subs"])
 
 @dp.callback_query(F.data.startswith("enter_promo_"))
 async def enter_promo(callback: CallbackQuery, state: FSMContext):
