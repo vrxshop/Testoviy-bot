@@ -1620,57 +1620,6 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
         )
 
 
-@dp.callback_query(F.data.startswith("crypto_ton_"))
-async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    
-    tariff_key = callback.data.replace("crypto_ton_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
-    
-    tariff = TARIFFS[tariff_key]
-    lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
-    user_id = callback.from_user.id
-    
-    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    
-    final_usd = round_to_half(final_rub / USD_RATE)
-    
-    invoice_data = await create_crypto_invoice_usd(final_usd, user_id, tariff_key, "TON")
-    
-    if invoice_data:
-        invoice_id = invoice_data["invoice_id"]
-        pay_url = invoice_data["pay_url"]
-        
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usd, "TON")
-        
-        text = LANG[lang]["pay_crypto_invoice"].format(
-            name=name,
-            amount=f"{final_usd} USD",
-            asset="TON"
-        )
-        
-        await callback.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
-                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
-            ])
-        )
-    else:
-        await callback.message.edit_text(
-            LANG[lang]["crypto_error"],
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
-            ])
-        )
-
-
 @dp.callback_query(F.data.startswith("crypto_btc_"))
 async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -1690,19 +1639,24 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
+    # Сумма в USD
     final_usd = round_to_half(final_rub / USD_RATE)
     
-    invoice_data = await create_crypto_invoice_usd(final_usd, user_id, tariff_key, "BTC")
+    # Конвертируем USD в BTC по курсу CryptoBot (~1 BTC = 65000 USD)
+    btc_rate = 65000  # 1 BTC ≈ 65000 USD
+    final_btc = round(final_usd / btc_rate, 8)
+    
+    invoice_data = await create_crypto_invoice_usd(final_btc, user_id, tariff_key, "BTC")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usd, "BTC")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
             name=name,
-            amount=f"{final_usd} USD",
+            amount=final_btc,
             asset="BTC"
         )
         
@@ -1721,6 +1675,61 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
             ])
         )
 
+
+@dp.callback_query(F.data.startswith("crypto_ton_"))
+async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("crypto_ton_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    # Сумма в USD
+    final_usd = round_to_half(final_rub / USD_RATE)
+    
+    # Конвертируем USD в TON по курсу CryptoBot (~1 TON = 2.5 USD)
+    ton_rate = 2.5  # 1 TON ≈ 2.5 USD
+    final_ton = round_to_half(final_usd / ton_rate)
+    
+    invoice_data = await create_crypto_invoice_usd(final_ton, user_id, tariff_key, "TON")
+    
+    if invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_ton, "TON")
+        
+        text = LANG[lang]["pay_crypto_invoice"].format(
+            name=name,
+            amount=final_ton,
+            asset="TON"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        await callback.message.edit_text(
+            LANG[lang]["crypto_error"],
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
 
 @dp.callback_query(F.data.startswith("crypto_direct_"))
 async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
