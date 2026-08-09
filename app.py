@@ -671,6 +671,34 @@ def round_to_half(value: float) -> float:
     """Округляет до ближайшего 0.5"""
     return round(value * 2) / 2
 
+async def choose_payment_logic(callback: CallbackQuery, state: FSMContext, tariff_key: str):
+    tariff = TARIFFS[tariff_key]
+    
+    if tariff['price_rub'] == 0:
+        lang = await get_lang(state)
+        user_id = callback.from_user.id
+        await callback.message.delete()
+        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
+        await callback.answer("✅ Доступ открыт!")
+        return
+    
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
+    else:
+        show_rub = tariff['price_rub']
+        price_text = f"{show_rub} RUB"
+    
+    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
+    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+
 # --- КЛАВИАТУРЫ ---
 def get_main_keyboard(lang):
     return ReplyKeyboardMarkup(keyboard=[
@@ -710,7 +738,7 @@ def get_tariff_details_keyboard(tariff_key, lang, user_id):
     
     if not is_paid:
         buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay"], callback_data=f"choose_pay_{tariff_key}")])
-        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay_for_friend"], callback_data=f"pay_for_friend_{tariff_key}")])
+        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay_for_friend"], callback_data=f"pay_for_friend_{tariff_key}")])  # <-- ЭТА КНОПКА
     
     buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
     
@@ -1263,7 +1291,7 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    tariff = TARIFFS[tariff_key]
+    await choose_payment_logic(callback, state, tariff_key)
     
     if tariff['price_rub'] == 0:
         lang = await get_lang(state)
@@ -1304,10 +1332,8 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    lang = await get_lang(state)
-    await callback.message.answer("👤 Отправьте ID или username друга, которому хотите оплатить тариф.")
-    await state.update_data(pay_for_friend_tariff=tariff_key)
-    await state.set_state("waiting_for_friend_id")
+    # Просто вызываем ту же логику что и обычная оплата
+    await choose_payment_logic(callback, state, tariff_key)
 
 @dp.message(F.text, state="waiting_for_friend_id")
 async def process_friend_payment(message: Message, state: FSMContext):
