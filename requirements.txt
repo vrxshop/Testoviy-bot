@@ -4,3 +4,4 @@ aiohttp==3.9.5
 asyncpg==0.29.0
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
+supabase
