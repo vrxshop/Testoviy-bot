@@ -1219,7 +1219,8 @@ async def process_promo(message: Message, state: FSMContext):
 
     if promo_code in PROMO_CODES:
         discount = PROMO_CODES[promo_code]
-        await state.update_data(discount=discount)
+        # СОХРАНЯЕМ скидку В СОСТОЯНИИ
+        await state.update_data(discount=discount, current_tariff=tariff_key)
         
         tariff = TARIFFS[tariff_key]
         name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
@@ -1232,8 +1233,8 @@ async def process_promo(message: Message, state: FSMContext):
             old_rub=tariff['price_rub'], 
             new_rub=new_rub
         )
+        # НЕ очищаем state!
         await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
-        await state.clear()
     else:
         await message.answer(LANG[lang]["promo_fail"])
 
@@ -1296,7 +1297,34 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    await choose_payment_logic(callback, state, tariff_key)
+    # БЕРЕМ скидку ИЗ СОСТОЯНИЯ
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    tariff = TARIFFS[tariff_key]
+    
+    if tariff['price_rub'] == 0:
+        lang = await get_lang(state)
+        user_id = callback.from_user.id
+        await callback.message.delete()
+        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
+        await callback.answer("✅ Доступ открыт!")
+        return
+    
+    lang = await get_lang(state)
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
+    else:
+        show_rub = tariff['price_rub']
+        price_text = f"{show_rub} RUB"
+    
+    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
+    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
 # ==================================================
 # ОПЛАТА ДЛЯ ДРУГА (РАБОТАЕТ ТАК ЖЕ)
@@ -1330,7 +1358,7 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
     
     lang = await get_lang(state)
     data = await state.get_data()
-    discount = data.get("discount", 0)
+    discount = data.get("discount", 0)  # БЕРЕМ СКИДКУ ИЗ СОСТОЯНИЯ
     user_id = callback.from_user.id
     
     final_price = int(TARIFFS[tariff_key]['price_rub'] * (1 - discount / 100))
@@ -1517,7 +1545,7 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
     data = await state.get_data()
-    discount = data.get("discount", 0)
+    discount = data.get("discount", 0)  # БЕРЕМ СКИДКУ ИЗ СОСТОЯНИЯ
     
     final_price = int(tariff['price_stars'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
@@ -1584,7 +1612,7 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
     data = await state.get_data()
-    discount = data.get("discount", 0)
+    discount = data.get("discount", 0)  # БЕРЕМ СКИДКУ ИЗ СОСТОЯНИЯ
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
@@ -1631,7 +1659,7 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
     data = await state.get_data()
-    discount = data.get("discount", 0)
+    discount = data.get("discount", 0)  # БЕРЕМ СКИДКУ ИЗ СОСТОЯНИЯ
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
@@ -1681,7 +1709,7 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
     data = await state.get_data()
-    discount = data.get("discount", 0)
+    discount = data.get("discount", 0)  # БЕРЕМ СКИДКУ ИЗ СОСТОЯНИЯ
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
