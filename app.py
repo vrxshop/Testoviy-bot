@@ -9,6 +9,7 @@ import re
 import aiohttp
 import random
 import string
+import socket  # <-- ДОБАВЛЯЕМ ЭТУ СТРОКУ! (если её нет)
 from datetime import datetime, timedelta
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types, F
@@ -76,7 +77,16 @@ if not DATABASE_URL:
         project_id = SUPABASE_URL.replace("https://", "").replace(".supabase.co", "")
         DATABASE_URL = f"postgresql://postgres:{os.getenv('SUPABASE_PASSWORD', '')}@db.{project_id}.supabase.co:5432/postgres"
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+# Принудительно используем IPv4 для подключения к PostgreSQL
+# Это обходит проблемы с недоступностью IPv6 в сети Render
+try:
+    socket.setdefaulttimeout(30)  # Устанавливаем таймаут
+    # Устанавливаем переменную окружения для psycopg2
+    os.environ['PGSYNC_PREFER_IPV4'] = '1'
+except Exception as e:
+    logging.warning(f"Не удалось установить настройки IPv4: {e}")
+
+engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args={'connect_timeout': 30})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
