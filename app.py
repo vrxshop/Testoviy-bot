@@ -1569,6 +1569,10 @@ async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_crypto_currency_keyboard(tariff_key, 0, lang)
     )
 
+# ==================================================
+# КРИПТОВАЛЮТА - ИСПРАВЛЕНО
+# ==================================================
+
 @dp.callback_query(F.data.startswith("crypto_usdt_"))
 async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -1619,6 +1623,7 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
             ])
         )
 
+
 @dp.callback_query(F.data.startswith("crypto_ton_"))
 async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -1638,19 +1643,22 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    final_ton = round_to_half(final_rub / TON_RATE)
+    # Сначала считаем в USDT
+    final_usdt = round_to_half(final_rub / USDT_RATE)
     
-    invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
+    # Отправляем в CryptoBot запрос на создание счета в TON
+    # CryptoBot сам сконвертирует USDT в TON по своему курсу
+    invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "TON")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_ton, "TON")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "TON")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
             name=name,
-            amount=final_ton,
+            amount=f"{final_usdt} USDT (~{round_to_half(final_usdt / 0.7)} TON)",  # Примерный курс
             asset="TON"
         )
         
@@ -1668,6 +1676,7 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
         )
+
 
 @dp.callback_query(F.data.startswith("crypto_btc_"))
 async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
@@ -1688,19 +1697,22 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    final_btc = round(final_rub / BTC_RATE, 8)
+    # Сначала считаем в USDT
+    final_usdt = round_to_half(final_rub / USDT_RATE)
     
-    invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
+    # Отправляем в CryptoBot запрос на создание счета в BTC
+    # CryptoBot сам сконвертирует USDT в BTC по своему курсу
+    invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "BTC")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "BTC")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
             name=name,
-            amount=final_btc,
+            amount=f"{final_usdt} USDT (~{round(final_usdt / 50000, 8)} BTC)",  # Примерный курс
             asset="BTC"
         )
         
