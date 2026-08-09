@@ -4,7 +4,8 @@ import os
 
 # Берем ключ из переменных окружения
 CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
-CRYPTOBOT_API_URL = "https://api.crypt.bot/v1/"
+# ПРАВИЛЬНЫЙ URL для CryptoBot API
+CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
 
 async def test_crypto_api():
     """Тест API ключа из переменных"""
@@ -13,9 +14,9 @@ async def test_crypto_api():
     
     if not CRYPTOBOT_API_KEY:
         print("❌ Переменная CRYPTO_TOKEN не найдена!")
-        print("   Проверь настройки Render: Environment -> Environment Variables")
         return False
     
+    # ПРАВИЛЬНЫЙ эндпоинт - getMe
     url = CRYPTOBOT_API_URL + "getMe"
     headers = {
         "Crypto-Pay-API-Token": CRYPTOBOT_API_KEY,
@@ -23,18 +24,25 @@ async def test_crypto_api():
     }
     
     try:
+        print(f"📤 Запрос к: {url}")
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers) as response:
-                data = await response.json()
-                print(f"📥 Ответ: {data}")
+                text = await response.text()
+                print(f"📥 Ответ (первые 200 символов): {text[:200]}")
                 
-                if data.get("ok"):
-                    print("✅ API ключ РАБОТАЕТ!")
-                    print(f"   Бот: @{data['result']['username']}")
-                    return True
-                else:
-                    print(f"❌ API ключ НЕ РАБОТАЕТ!")
-                    print(f"   Ошибка: {data}")
+                try:
+                    data = await response.json()
+                    if data.get("ok"):
+                        print("✅ API ключ РАБОТАЕТ!")
+                        print(f"   Бот: @{data['result']['username']}")
+                        return True
+                    else:
+                        print(f"❌ API ключ НЕ РАБОТАЕТ!")
+                        print(f"   Ошибка: {data}")
+                        return False
+                except:
+                    print("❌ Ответ не в формате JSON!")
+                    print(f"   Текст ответа: {text[:500]}")
                     return False
     except Exception as e:
         print(f"❌ Ошибка: {e}")
@@ -79,8 +87,9 @@ async def create_test_invoice():
 
 async def main():
     print("=" * 50)
-    print("🧪 ТЕСТ CRYPTOBOT API")
+    print("🧪 ТЕСТ CRYPTOBOT API (ПРАВИЛЬНЫЙ URL)")
     print(f"📌 Переменная: CRYPTO_TOKEN")
+    print(f"📌 URL: {CRYPTOBOT_API_URL}")
     print("=" * 50)
     
     # Тест 1: проверка ключа
@@ -93,8 +102,7 @@ async def main():
         print("\n❌ Невозможно создать счет - API ключ не работает!")
         print("   Проверь:")
         print("   1. Переменная CRYPTO_TOKEN добавлена в Render")
-        print("   2. Значение ключа правильное")
-        print("   3. Бот перезапущен после добавления переменной")
+        print("   2. Значение ключа правильное (без лишних пробелов)")
 
 if __name__ == "__main__":
     asyncio.run(main())
