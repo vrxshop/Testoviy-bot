@@ -298,9 +298,9 @@ LANG = {
         "promo_success": "✅ Промокод <b>{code}</b> активирован! Скидка {discount}% 🔥\n\n📋 <b>{name}</b>\n💰 Цена: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nВыберите валюту для оплаты.",
         "promo_fail": "❌ Промокод не найден. Попробуйте еще раз (или нажмите ◀️ Отмена).",
         "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите способ оплаты",
-        "pay_card": "💳 <b>Оплата на карту</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n{price_line}\n\nСпособ оплаты: Перевод на карту\n\n💰 К оплате: {final} RUB\n🆔 Ваш ID: {user_id}\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 2200190284092510\n\n🏧 Банк: Уралсиб\nПолучатель: Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку «Я оплатил»\n❕ Если вы ждете больше 12 часов, напишите администратору",
+        "pay_card": "💳 <b>Оплата на карту</b>\n\nСпособ оплаты: Перевод на карту\n\n💰 К оплате: {final} RUB\n🆔 Ваш ID: {user_id}\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 2200190284092510\n\n🏧 Банк: Уралсиб\nПолучатель: Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку «Я оплатил»\n❕ Если вы ждете больше 12 часов, напишите администратору",
         "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@kasgd</a>\n\nкурс:\n1 ⭐ - 1 рубль",
-        "pay_crypto_choose": "🪙 <b>Выберите монету:</b>\n\n📋 <b>{name}</b>\n📅 Срок: {duration}\n💰 Цена: {price_line}",
+        "pay_crypto_choose": "🪙 <b>Выберите монету:</b>",
         "pay_crypto_invoice": "✅ <b>Счёт на оплату сформирован.</b>\n\nДоступы к закрытым сообществам будут открыты, как только вы оплатите его.\n\n📋 <b>{name}</b>\n💰 Сумма: <b>{amount} {asset}</b>\n\nНажмите кнопку ниже для оплаты:",
         "crypto_payment_success": "✅ <b>Оплата прошла успешно!</b>\n\nДля получения доступа пишите @kasgd\n❗️ Пишите сразу тариф, который брали, и чек оплаты",
         "refresh_link": "♻️ <i>Ссылка обновлена!</i>",
@@ -336,7 +336,8 @@ LANG = {
         "payment_receipt_received": "✅ Ваш чек получен! Администратор проверит его в ближайшее время.",
         "new_payment_request": "🆕 <b>Новая заявка на оплату!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n💰 Сумма: {amount} RUB\n📝 Сообщение: {message_text}\n\n{media_info}",
         "admin_panel": "⚙️ <b>Админ-панель</b>\n\n👥 Всего пользователей: {user_count}\n⏳ Ожидают проверки: {pending_count}\n\nВыберите действие:",
-        "crypto_error": "❌ Ошибка создания счета. Попробуйте позже или выберите другой способ оплаты."
+        "crypto_error": "❌ Ошибка создания счета. Проверьте API ключ или попробуйте позже.",
+        "crypto_direct": "🪙 <b>Прямой перевод</b>\n\nДля получения реквизитов либо по другому вопросу - @kasgd"
     },
     "en": {
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
@@ -350,9 +351,9 @@ LANG = {
         "promo_success": "✅ Promo code <b>{code}</b> activated! {discount}% discount 🔥\n\n📋 <b>{name}</b>\n💰 Price: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nChoose a currency for payment.",
         "promo_fail": "❌ Promo code not found. Try again (or press ◀️ Cancel).",
         "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose payment method",
-        "pay_card": "💳 <b>Card payment</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n{price_line}\n\nPayment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
+        "pay_card": "💳 <b>Card payment</b>\n\nPayment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
         "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@kasgd</a>\n\nRate:\n1 ⭐ - 1 ruble",
-        "pay_crypto_choose": "🪙 <b>Choose coin:</b>\n\n📋 <b>{name}</b>\n📅 Duration: {duration}\n💰 Price: {price_line}",
+        "pay_crypto_choose": "🪙 <b>Choose coin:</b>",
         "pay_crypto_invoice": "✅ <b>Invoice created.</b>\n\nAccess to closed communities will be opened as soon as you pay it.\n\n📋 <b>{name}</b>\n💰 Amount: <b>{amount} {asset}</b>\n\nClick the button below to pay:",
         "crypto_payment_success": "✅ <b>Payment successful!</b>\n\nFor access write @kasgd\n❗️ Write the tariff you purchased and payment receipt",
         "refresh_link": "♻️ <i>Link refreshed!</i>",
@@ -388,7 +389,8 @@ LANG = {
         "payment_receipt_received": "✅ Your receipt has been received! Administrator will check it shortly.",
         "new_payment_request": "🆕 <b>New payment request!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n💰 Amount: {amount} RUB\n📝 Message: {message_text}\n\n{media_info}",
         "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n⏳ Pending: {pending_count}\n\nSelect action:",
-        "crypto_error": "❌ Error creating invoice. Try again later or choose another payment method."
+        "crypto_error": "❌ Error creating invoice. Check API key or try again later.",
+        "crypto_direct": "🪙 <b>Direct transfer</b>\n\nFor details or other questions - @kasgd"
     }
 }
 
@@ -592,6 +594,7 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
 async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
     """Создает счет в CryptoBot и возвращает данные"""
     if not CRYPTOBOT_API_KEY:
+        logging.error("CRYPTOBOT_API_KEY не задан!")
         return None
     
     url = CRYPTOBOT_API_URL + "createInvoice"
@@ -608,9 +611,14 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
         "payload": f"{user_id}_{tariff_key}"
     }
     
+    logging.info(f"Создание инвойса: {payload}")
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as response:
+                response_text = await response.text()
+                logging.info(f"Ответ CryptoBot: {response_text}")
+                
                 if response.status == 200:
                     data = await response.json()
                     if data.get("ok"):
@@ -623,7 +631,7 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
                         logging.error(f"Ошибка CryptoBot: {data}")
                         return None
                 else:
-                    logging.error(f"Ошибка HTTP: {response.status}")
+                    logging.error(f"Ошибка HTTP: {response.status}, {response_text}")
                     return None
     except Exception as e:
         logging.error(f"Ошибка при создании счета: {e}")
@@ -1255,26 +1263,14 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
     data = await state.get_data()
     discount = data.get("discount", 0)
     user_id = callback.from_user.id
     
-    final_price = int(tariff['price_rub'] * (1 - discount / 100))
-    
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
-    
-    if discount > 0:
-        price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
-    else:
-        price_line = f"💰 Цена: {final_price} RUB\n"
+    final_price = int(TARIFFS[tariff_key]['price_rub'] * (1 - discount / 100))
     
     text = LANG[lang]["pay_card"].format(
-        name=name,
-        duration=duration,
-        price_line=price_line,
         final=final_price,
         user_id=user_id
     )
@@ -1500,29 +1496,13 @@ async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     
-    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
-    
-    if discount > 0:
-        price_line = f"<s>{tariff['price_rub']} RUB</s> → {final_rub} RUB (-{discount}%)"
-    else:
-        price_line = f"{final_rub} RUB"
-    
-    text = LANG[lang]["pay_crypto_choose"].format(
-        name=name,
-        duration=duration,
-        price_line=price_line
-    )
+    text = LANG[lang]["pay_crypto_choose"]
     
     await callback.message.edit_text(
         text,
-        reply_markup=get_crypto_currency_keyboard(tariff_key, discount, lang)
+        reply_markup=get_crypto_currency_keyboard(tariff_key, 0, lang)
     )
 
 @dp.callback_query(F.data.startswith("crypto_usdt_"))
@@ -1690,7 +1670,7 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
     
     lang = await get_lang(state)
     
-    text = LANG[lang]["pay_crypto_direct"]
+    text = LANG[lang]["crypto_direct"]
     
     await callback.message.edit_text(
         text,
@@ -1956,7 +1936,7 @@ async def main():
     print("=" * 60)
     print("🚀 ОСНОВНОЙ БОТ ЗАПУЩЕН!")
     print("📦 База данных: Supabase + SQLite")
-    print("🪙 Криптоплатеж: " + ("✅" if CRYPTOBOT_API_KEY else "❌ (ключ не задан)"))
+    print(f"🪙 CRYPTO_TOKEN: {CRYPTOBOT_API_KEY[:10]}... (задан)" if CRYPTOBOT_API_KEY else "🪙 CRYPTO_TOKEN: НЕ ЗАДАН!")
     print("📞 Поддержка: @kasgd")
     print("👥 Админы: " + ", ".join(str(admin) for admin in ADMIN_IDS))
     print("=" * 60)
