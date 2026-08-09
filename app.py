@@ -1179,50 +1179,23 @@ async def handle_join_request(update: ChatJoinRequest):
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    first_name = message.from_user.first_name or "Пользователь"
-    username = message.from_user.username
-    
-    logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
-    
-    add_user(user_id, first_name, username)
-    
-    # Проверяем, может это активация ключа
-    if message.text and " " in message.text:
-        parts = message.text.split()
-        if len(parts) > 1 and parts[0] == "/start":
-            key_param = parts[1]
-            if key_param.startswith("key_"):
-                await process_key_activation(message, key_param, state)
-                return
-    
-    lang = await get_lang(state)
-    
-    welcome_text = f"""👋 Привет, {first_name}!
-Ты попал в наш бот✅
-
-Нажимая на каждый тариф ты видишь краткое описание.
-
-Если бот не доступен пиши мне
-
-Тех.поддержка: @kasgd"""
+    # ... код ...
     
     # ПЕРВОЕ сообщение - приветствие
     await message.answer(welcome_text, disable_web_page_preview=True)
     
-    # ВТОРОЕ сообщение - меню + тарифы
+    # ВТОРОЕ сообщение - меню + тарифы (без "Прайс")
     menu_text = LANG[lang]["main_menu_text"]
     await message.answer(
         menu_text,
         reply_markup=get_main_keyboard(lang)
     )
     
-    # ТРЕТЬЕ сообщение - ТАРИФЫ (добавляем!)
+    # СРАЗУ показываем тарифы (без лишнего текста)
     await message.answer(
-        LANG[lang]["prices_menu"],
+        "",  # пустое сообщение? или просто показываем кнопки
         reply_markup=get_tariff_keyboard(lang)
     )
-
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
