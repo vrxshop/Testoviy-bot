@@ -9,7 +9,7 @@ import re
 import aiohttp
 import random
 import string
-import socket  # <-- ДОБАВЛЯЕМ ЭТУ СТРОКУ! (если её нет)
+import socket
 from datetime import datetime, timedelta
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types, F
@@ -21,10 +21,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy import create_engine, text, Column, Integer, String, DateTime, Boolean, Float, BigInteger, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql import func
+from supabase import create_client, Client
 
 # ==================================================
 # FLASK
@@ -63,452 +60,313 @@ def crypto_webhook():
         return "Error", 500
 
 # ==================================================
-# SUPABASE (SQLAlchemy)
+# SUPABASE (REST API)
 # ==================================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Строка подключения к Supabase PostgreSQL
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    # Формируем из SUPABASE_URL если нет DATABASE_URL
-    if SUPABASE_URL:
-        # Преобразуем https://project.supabase.co -> postgresql://postgres:password@db.project.supabase.co:5432/postgres
-        project_id = SUPABASE_URL.replace("https://", "").replace(".supabase.co", "")
-        DATABASE_URL = f"postgresql://postgres:{os.getenv('SUPABASE_PASSWORD', '')}@db.{project_id}.supabase.co:5432/postgres"
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logging.error("❌ SUPABASE_URL или SUPABASE_KEY не заданы в переменных окружения!")
+    exit(1)
 
-# Принудительно используем IPv4 для подключения к PostgreSQL
-# Это обходит проблемы с недоступностью IPv6 в сети Render
-try:
-    socket.setdefaulttimeout(30)  # Устанавливаем таймаут
-    # Устанавливаем переменную окружения для psycopg2
-    os.environ['PGSYNC_PREFER_IPV4'] = '1'
-except Exception as e:
-    logging.warning(f"Не удалось установить настройки IPv4: {e}")
-
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args={'connect_timeout': 30})
-SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+logging.info("✅ Supabase REST API подключен")
 
 # ==================================================
-# МОДЕЛИ БАЗЫ ДАННЫХ
+# ФУНКЦИИ РАБОТЫ С БАЗОЙ (REST API)
 # ==================================================
-
-class User(Base):
-    __tablename__ = 'users'
-    
-    user_id = Column(BigInteger, primary_key=True)
-    first_name = Column(String(255))
-    username = Column(String(255))
-    created_at = Column(DateTime, default=func.now())
-
-class Subscription(Base):
-    __tablename__ = 'subscriptions'
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(BigInteger, nullable=False)
-    tariff_key = Column(String(50), nullable=False)
-    started_at = Column(DateTime, default=func.now())
-    expires_at = Column(DateTime, nullable=True)  # NULL = бессрочно
-    status = Column(String(20), default='active')  # active, expired
-    created_at = Column(DateTime, default=func.now())
-
-class TariffChannel(Base):
-    __tablename__ = 'tariff_channels'
-    
-    tariff_key = Column(String(50), primary_key=True)
-    channel_id = Column(String(50), nullable=True)
-    invite_link = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-class SubscriptionKey(Base):
-    __tablename__ = 'subscription_keys'
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    key = Column(String(100), unique=True, nullable=False)
-    tariff_key = Column(String(50), nullable=False)
-    duration_days = Column(Integer, nullable=True)  # NULL = бессрочно
-    created_by = Column(BigInteger, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-
-class PromoCode(Base):
-    __tablename__ = 'promo_codes'
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    code = Column(String(50), unique=True, nullable=False)
-    discount_percent = Column(Integer, nullable=False)
-    expires_at = Column(DateTime, nullable=True)  # NULL = бессрочно
-    created_by = Column(BigInteger, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-
-# ==================================================
-# СОЗДАНИЕ ТАБЛИЦ
-# ==================================================
-Base.metadata.create_all(engine)
-logging.info("✅ Таблицы созданы/проверены")
-
-# ==================================================
-# ФУНКЦИИ РАБОТЫ С БАЗОЙ
-# ==================================================
-
-def get_db():
-    db = SessionLocal()
-    try:
-        return db
-    finally:
-        db.close()
-
-def generate_key(length=32):
-    """Генерирует длинный уникальный ключ"""
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
 def get_all_users():
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT user_id FROM users"))
-            return [row[0] for row in result]
+        response = supabase.table('users').select('user_id').execute()
+        return [row['user_id'] for row in response.data]
     except Exception as e:
         logging.error(f"Ошибка получения пользователей: {e}")
         return []
 
 def get_user_count():
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM users"))
-            return result.fetchone()[0] or 0
+        response = supabase.table('users').select('*', count='exact').execute()
+        return response.count or 0
     except Exception as e:
         logging.error(f"Ошибка получения количества пользователей: {e}")
         return 0
 
 def add_user(user_id: int, first_name: str, username: str = None):
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO users (user_id, first_name, username) VALUES (:id, :name, :uname) ON CONFLICT (user_id) DO NOTHING"),
-                {"id": user_id, "name": first_name, "uname": username}
-            )
-            conn.commit()
+        supabase.table('users').upsert({
+            'user_id': user_id,
+            'first_name': first_name,
+            'username': username
+        }).execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка добавления пользователя: {e}")
         return False
 
 def get_active_subscriptions(user_id: int):
-    """Получить активные подписки пользователя"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscriptions WHERE user_id = :id AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())"),
-                {"id": user_id}
-            )
-            return result.fetchall()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .eq('status', 'active')\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения подписок: {e}")
         return []
 
 def get_subscription_by_tariff(user_id: int, tariff_key: str):
-    """Получить подписку на конкретный тариф"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscriptions WHERE user_id = :id AND tariff_key = :key AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())"),
-                {"id": user_id, "key": tariff_key}
-            )
-            return result.fetchone()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .eq('tariff_key', tariff_key)\
+            .eq('status', 'active')\
+            .execute()
+        return response.data[0] if response.data else None
     except Exception as e:
         logging.error(f"Ошибка получения подписки: {e}")
         return None
 
 def add_subscription(user_id: int, tariff_key: str, duration_days: int = None):
-    """Добавить подписку пользователю"""
     try:
         expires_at = None
         if duration_days is not None:
-            expires_at = datetime.now() + timedelta(days=duration_days)
+            expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
         
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO subscriptions (user_id, tariff_key, expires_at) VALUES (:id, :key, :exp)"),
-                {"id": user_id, "key": tariff_key, "exp": expires_at}
-            )
-            conn.commit()
+        supabase.table('subscriptions').insert({
+            'user_id': user_id,
+            'tariff_key': tariff_key,
+            'expires_at': expires_at,
+            'status': 'active'
+        }).execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка добавления подписки: {e}")
         return False
 
 def extend_subscription(user_id: int, tariff_key: str, duration_days: int):
-    """Продлить подписку (прибавить дни)"""
     try:
-        with engine.connect() as conn:
-            # Проверяем есть ли подписка
-            sub = conn.execute(
-                text("SELECT expires_at FROM subscriptions WHERE user_id = :id AND tariff_key = :key AND status = 'active'"),
-                {"id": user_id, "key": tariff_key}
-            ).fetchone()
-            
-            if sub and sub[0] is not None:
-                # Если есть дата истечения - прибавляем дни
-                new_expires = sub[0] + timedelta(days=duration_days)
-                conn.execute(
-                    text("UPDATE subscriptions SET expires_at = :exp WHERE user_id = :id AND tariff_key = :key AND status = 'active'"),
-                    {"exp": new_expires, "id": user_id, "key": tariff_key}
-                )
-            else:
-                # Если бессрочная или нет подписки - создаем новую
-                expires_at = None if sub and sub[0] is None else datetime.now() + timedelta(days=duration_days)
-                conn.execute(
-                    text("INSERT INTO subscriptions (user_id, tariff_key, expires_at) VALUES (:id, :key, :exp) ON CONFLICT (user_id, tariff_key) DO UPDATE SET expires_at = :exp"),
-                    {"id": user_id, "key": tariff_key, "exp": expires_at}
-                )
-            conn.commit()
+        sub = get_subscription_by_tariff(user_id, tariff_key)
+        if sub and sub.get('expires_at'):
+            expires_at = datetime.fromisoformat(sub['expires_at']) + timedelta(days=duration_days)
+            supabase.table('subscriptions')\
+                .update({'expires_at': expires_at.isoformat()})\
+                .eq('user_id', user_id)\
+                .eq('tariff_key', tariff_key)\
+                .execute()
+        else:
+            add_subscription(user_id, tariff_key, duration_days)
         return True
     except Exception as e:
         logging.error(f"Ошибка продления подписки: {e}")
         return False
 
 def expire_subscription(user_id: int, tariff_key: str):
-    """Пометить подписку как истекшую"""
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("UPDATE subscriptions SET status = 'expired' WHERE user_id = :id AND tariff_key = :key"),
-                {"id": user_id, "key": tariff_key}
-            )
-            conn.commit()
+        supabase.table('subscriptions')\
+            .update({'status': 'expired'})\
+            .eq('user_id', user_id)\
+            .eq('tariff_key', tariff_key)\
+            .execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка отметки подписки: {e}")
         return False
 
 def get_tariff_channel(tariff_key: str):
-    """Получить настройки канала для тарифа"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM tariff_channels WHERE tariff_key = :key"),
-                {"key": tariff_key}
-            )
-            return result.fetchone()
+        response = supabase.table('tariff_channels')\
+            .select('*')\
+            .eq('tariff_key', tariff_key)\
+            .execute()
+        return response.data[0] if response.data else None
     except Exception as e:
         logging.error(f"Ошибка получения канала: {e}")
         return None
 
 def set_tariff_channel(tariff_key: str, channel_id: str, invite_link: str):
-    """Установить настройки канала для тарифа"""
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO tariff_channels (tariff_key, channel_id, invite_link) VALUES (:key, :cid, :link) ON CONFLICT (tariff_key) DO UPDATE SET channel_id = :cid, invite_link = :link, updated_at = NOW()"),
-                {"key": tariff_key, "cid": channel_id, "link": invite_link}
-            )
-            conn.commit()
+        supabase.table('tariff_channels').upsert({
+            'tariff_key': tariff_key,
+            'channel_id': channel_id,
+            'invite_link': invite_link
+        }).execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка сохранения канала: {e}")
         return False
 
 def create_subscription_key(tariff_key: str, duration_days: int = None, created_by: int = None) -> str:
-    """Создать одноразовый ключ"""
     try:
-        key = generate_key(32)
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO subscription_keys (key, tariff_key, duration_days, created_by) VALUES (:key, :t, :dur, :creator)"),
-                {"key": key, "t": tariff_key, "dur": duration_days, "creator": created_by}
-            )
-            conn.commit()
+        key = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+        supabase.table('subscription_keys').insert({
+            'key': key,
+            'tariff_key': tariff_key,
+            'duration_days': duration_days,
+            'created_by': created_by
+        }).execute()
         return key
     except Exception as e:
         logging.error(f"Ошибка создания ключа: {e}")
         return None
 
 def get_subscription_key(key: str):
-    """Получить ключ по значению"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscription_keys WHERE key = :key"),
-                {"key": key}
-            )
-            return result.fetchone()
+        response = supabase.table('subscription_keys')\
+            .select('*')\
+            .eq('key', key)\
+            .execute()
+        return response.data[0] if response.data else None
     except Exception as e:
         logging.error(f"Ошибка получения ключа: {e}")
         return None
 
 def delete_subscription_key(key: str):
-    """Удалить ключ (после активации)"""
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("DELETE FROM subscription_keys WHERE key = :key"),
-                {"key": key}
-            )
-            conn.commit()
+        supabase.table('subscription_keys')\
+            .delete()\
+            .eq('key', key)\
+            .execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка удаления ключа: {e}")
         return False
 
 def create_promo_code(code: str, discount_percent: int, expires_minutes: int = None, created_by: int = None):
-    """Создать промокод"""
     try:
         expires_at = None
         if expires_minutes is not None:
-            expires_at = datetime.now() + timedelta(minutes=expires_minutes)
+            expires_at = (datetime.now() + timedelta(minutes=expires_minutes)).isoformat()
         
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO promo_codes (code, discount_percent, expires_at, created_by) VALUES (:code, :disc, :exp, :creator) ON CONFLICT (code) DO UPDATE SET discount_percent = :disc, expires_at = :exp"),
-                {"code": code.upper(), "disc": discount_percent, "exp": expires_at, "creator": created_by}
-            )
-            conn.commit()
+        supabase.table('promo_codes').upsert({
+            'code': code.upper(),
+            'discount_percent': discount_percent,
+            'expires_at': expires_at,
+            'created_by': created_by
+        }).execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка создания промокода: {e}")
         return False
 
 def get_promo_code(code: str):
-    """Получить промокод по названию"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM promo_codes WHERE code = :code"),
-                {"code": code.upper()}
-            )
-            return result.fetchone()
+        response = supabase.table('promo_codes')\
+            .select('*')\
+            .eq('code', code.upper())\
+            .execute()
+        return response.data[0] if response.data else None
     except Exception as e:
         logging.error(f"Ошибка получения промокода: {e}")
         return None
 
 def delete_promo_code(code: str):
-    """Удалить промокод"""
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("DELETE FROM promo_codes WHERE code = :code"),
-                {"code": code.upper()}
-            )
-            conn.commit()
+        supabase.table('promo_codes')\
+            .delete()\
+            .eq('code', code.upper())\
+            .execute()
         return True
     except Exception as e:
         logging.error(f"Ошибка удаления промокода: {e}")
         return False
 
 def get_all_promo_codes():
-    """Получить все промокоды"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT * FROM promo_codes ORDER BY created_at DESC"))
-            return result.fetchall()
+        response = supabase.table('promo_codes')\
+            .select('*')\
+            .order('created_at', desc=True)\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения промокодов: {e}")
         return []
 
 def get_expired_subscriptions():
-    """Получить все истекшие подписки"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscriptions WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()")
-            )
-            return result.fetchall()
+        now = datetime.now().isoformat()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .lt('expires_at', now)\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения истекших подписок: {e}")
         return []
 
 def get_expiring_soon_subscriptions(days=3):
-    """Получить подписки, истекающие через N дней"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscriptions WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at BETWEEN NOW() AND NOW() + INTERVAL :days DAY"),
-                {"days": days}
-            )
-            return result.fetchall()
+        now = datetime.now().isoformat()
+        future = (datetime.now() + timedelta(days=days)).isoformat()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .gte('expires_at', now)\
+            .lte('expires_at', future)\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения подписок: {e}")
         return []
 
 def get_all_active_subscriptions():
-    """Получить все активные подписки"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT * FROM subscriptions WHERE status = 'active' AND (expires_at IS NULL OR expires_at > NOW())")
-            )
-            return result.fetchall()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения подписок: {e}")
         return []
 
 def get_subscription_stats():
-    """Получить статистику по подпискам"""
     try:
-        with engine.connect() as conn:
-            # Всего активных
-            total = conn.execute(text("SELECT COUNT(*) FROM subscriptions WHERE status = 'active' AND (expires_at IS NULL OR expires_at > NOW())")).fetchone()[0] or 0
-            
-            # Истекают завтра
-            tomorrow = datetime.now() + timedelta(days=1)
-            expiring_tomorrow = conn.execute(
-                text("SELECT COUNT(*) FROM subscriptions WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at BETWEEN NOW() AND :tomorrow"),
-                {"tomorrow": tomorrow}
-            ).fetchone()[0] or 0
-            
-            return {"total": total, "expiring_tomorrow": expiring_tomorrow}
+        response = supabase.table('subscriptions')\
+            .select('*', count='exact')\
+            .eq('status', 'active')\
+            .execute()
+        total = response.count or 0
+        
+        tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
+        response2 = supabase.table('subscriptions')\
+            .select('*', count='exact')\
+            .eq('status', 'active')\
+            .lte('expires_at', tomorrow)\
+            .execute()
+        expiring_tomorrow = response2.count or 0
+        
+        return {"total": total, "expiring_tomorrow": expiring_tomorrow}
     except Exception as e:
         logging.error(f"Ошибка статистики: {e}")
         return {"total": 0, "expiring_tomorrow": 0}
 
 def get_all_channels():
-    """Получить все настройки каналов"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT * FROM tariff_channels"))
-            return result.fetchall()
+        response = supabase.table('tariff_channels')\
+            .select('*')\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения каналов: {e}")
         return []
 
 def get_all_subscription_keys():
-    """Получить все ключи"""
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT * FROM subscription_keys ORDER BY created_at DESC"))
-            return result.fetchall()
+        response = supabase.table('subscription_keys')\
+            .select('*')\
+            .order('created_at', desc=True)\
+            .execute()
+        return response.data
     except Exception as e:
         logging.error(f"Ошибка получения ключей: {e}")
         return []
 
 # ==================================================
-# КОНФИГУРАЦИЯ
-# ==================================================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-PROJECT_NAME = "VIP"
-SUPPORT_CONTACT_RU = "https://t.me/kasgd"
-SUPPORT_CONTACT_EN = "https://t.me/kasgd"
-ADMIN_IDS = [8370080332, 8559381302, 8924977674]
-
-# CRYPTOBOT
-CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
-CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
-
-# КУРСЫ
-USDT_RATE = 80
-USD_RATE = 80
-GRAM_RATE = 1.34
-BTC_RATE = 65000
-
-# ==================================================
-# ID КАНАЛОВ (устаревшие, теперь хранятся в БД)
-# ==================================================
-CHANNEL_IDS = {
-    "test": "-1003875225035",
-}
-
-# ==================================================
-# БАЗА ДАННЫХ (SQLite - резервная, для совместимости)
+# SQLite (для совместимости с существующим кодом)
 # ==================================================
 DB_PATH = "users.db"
 
@@ -654,6 +512,32 @@ def mark_invoice_paid(invoice_id: str):
     except Exception as e:
         logging.error(f"Ошибка отметки инвойса: {e}")
         return False
+
+# ==================================================
+# КОНФИГУРАЦИЯ
+# ==================================================
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+PROJECT_NAME = "VIP"
+SUPPORT_CONTACT_RU = "https://t.me/kasgd"
+SUPPORT_CONTACT_EN = "https://t.me/kasgd"
+ADMIN_IDS = [8370080332, 8559381302, 8924977674]
+
+# CRYPTOBOT
+CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
+CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
+
+# КУРСЫ
+USDT_RATE = 80
+USD_RATE = 80
+GRAM_RATE = 1.34
+BTC_RATE = 65000
+
+# ==================================================
+# ID КАНАЛОВ (устаревшие, для совместимости)
+# ==================================================
+CHANNEL_IDS = {
+    "test": "-1003875225035",
+}
 
 # ==================================================
 # ТЕКСТЫ
@@ -866,11 +750,11 @@ TARIFFS = {
     "9": {
         "name_ru": "🩵Всё включено 2026💚",
         "name_en": "🩵All inclusive 2026💚",
-        "price_rub": 1999,
-        "price_stars": 1999,
+        "price_rub": 1499,
+        "price_stars": 1499,
         "duration_ru": "Бессрочно",
         "duration_en": "Forever",
-        "duration_days": None,  # Бессрочно
+        "duration_days": None,
         "category": "main",
         "desc_ru": "❗️Вы получите доступ сразу в 10 наших каналов при этом их подписка останется у вас НАВСЕГДА! А выйдет гораздо дешевле чем покупать по отдельности.\n\n🔥 Кoнтeнтa у вас выйдет очень МНОГО\n\n+ Бонусные каналы к тарифу"
     },
@@ -971,7 +855,9 @@ class AdminStates(StatesGroup):
     waiting_for_promo_discount = State()
     waiting_for_promo_minutes = State()
 
-# --- ФУНКЦИИ ---
+# ==================================================
+# ФУНКЦИИ
+# ==================================================
 async def create_one_time_link(chat_id: str) -> str:
     try:
         expire_date = datetime.now() + timedelta(seconds=30)
@@ -1077,7 +963,41 @@ def get_tariff_name(tariff_key: str, lang: str = "ru"):
 def format_date(date):
     if date is None:
         return "Бессрочно"
+    if isinstance(date, str):
+        date = datetime.fromisoformat(date)
     return date.strftime("%d.%m.%Y")
+
+# ==================================================
+# ОБЩАЯ ФУНКЦИЯ ДЛЯ ВЫБОРА ОПЛАТЫ
+# ==================================================
+
+async def choose_payment_logic(callback: CallbackQuery, state: FSMContext, tariff_key: str):
+    tariff = TARIFFS[tariff_key]
+    
+    if tariff['price_rub'] == 0:
+        lang = await get_lang(state)
+        user_id = callback.from_user.id
+        await callback.message.delete()
+        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
+        await callback.answer("✅ Доступ открыт!")
+        return
+    
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
+    else:
+        show_rub = tariff['price_rub']
+        price_text = f"{show_rub} RUB"
+    
+    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
+    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
 # --- КЛАВИАТУРЫ ---
 def get_main_keyboard(lang):
@@ -1176,7 +1096,7 @@ def get_subscription_keyboard(subscriptions, lang="ru"):
     """Клавиатура для раздела Мои подписки"""
     buttons = []
     for sub in subscriptions:
-        tariff_key = sub[2]  # tariff_key
+        tariff_key = sub['tariff_key']
         name = get_tariff_name(tariff_key, lang)
         buttons.append([InlineKeyboardButton(text=name, callback_data=f"access_{tariff_key}")])
     buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
@@ -1185,7 +1105,7 @@ def get_subscription_keyboard(subscriptions, lang="ru"):
 def get_access_keyboard(tariff_key, lang="ru"):
     """Клавиатура для доступа к каналу"""
     tariff_channel = get_tariff_channel(tariff_key)
-    invite_link = tariff_channel[2] if tariff_channel else None
+    invite_link = tariff_channel['invite_link'] if tariff_channel else None
     
     buttons = []
     if invite_link:
@@ -1207,27 +1127,26 @@ async def handle_join_request(update: ChatJoinRequest):
     logging.info(f"📥 Заявка от {user_id} в канал {chat_id}")
     
     # Проверяем есть ли подписка у пользователя на этот канал
-    # Находим tariff_key по channel_id
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT tariff_key FROM tariff_channels WHERE channel_id = :cid"),
-                {"cid": str(chat_id)}
-            ).fetchone()
+        # Находим tariff_key по channel_id
+        response = supabase.table('tariff_channels')\
+            .select('tariff_key')\
+            .eq('channel_id', str(chat_id))\
+            .execute()
+        
+        if response.data:
+            tariff_key = response.data[0]['tariff_key']
             
-            if result:
-                tariff_key = result[0]
-                
-                # Проверяем подписку
-                sub = get_subscription_by_tariff(user_id, tariff_key)
-                if sub:
-                    await update.approve()
-                    logging.info(f"✅ Заявка от {user_id} одобрена для {tariff_key}")
-                    return
-                else:
-                    logging.info(f"❌ Отказ для {user_id} - нет подписки на {tariff_key}")
+            # Проверяем подписку
+            sub = get_subscription_by_tariff(user_id, tariff_key)
+            if sub:
+                await update.approve()
+                logging.info(f"✅ Заявка от {user_id} одобрена для {tariff_key}")
+                return
             else:
-                logging.info(f"⚠️ Канал {chat_id} не найден в настройках")
+                logging.info(f"❌ Отказ для {user_id} - нет подписки на {tariff_key}")
+        else:
+            logging.info(f"⚠️ Канал {chat_id} не найден в настройках")
     except Exception as e:
         logging.error(f"Ошибка обработки заявки: {e}")
 
@@ -1282,8 +1201,8 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
         return
     
     # Получаем данные ключа
-    tariff_key = key_data[2]  # tariff_key
-    duration_days = key_data[3]  # duration_days
+    tariff_key = key_data['tariff_key']
+    duration_days = key_data['duration_days']
     
     tariff = TARIFFS.get(tariff_key)
     tariff_name = get_tariff_name(tariff_key, lang)
@@ -1297,18 +1216,15 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
             extend_subscription(user_id, tariff_key, duration_days)
             expires_at = datetime.now() + timedelta(days=duration_days)
         else:
-            # Бессрочно - ничего не меняем, но обновим статус
-            pass
+            expires_at = None
     else:
         # Создаем новую подписку
         add_subscription(user_id, tariff_key, duration_days)
+        sub = get_subscription_by_tariff(user_id, tariff_key)
+        expires_at = sub['expires_at'] if sub else None
     
     # Удаляем ключ
     delete_subscription_key(key_param)
-    
-    # Получаем обновленную подписку для отображения
-    sub = get_subscription_by_tariff(user_id, tariff_key)
-    expires_at = sub[4] if sub else None
     
     # Отправляем сообщение пользователю
     text = LANG[lang]["key_activated"].format(
@@ -1361,16 +1277,15 @@ async def admin_channels(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     channels = get_all_channels()
-    tariff_list = TARIFFS
     
     text = "📋 <b>Управление ссылками каналов</b>\n\n"
     text += "Для каждого тарифа можно настроить ссылку на канал с заявками.\n\n"
     
-    for key, tariff in tariff_list.items():
+    for key, tariff in TARIFFS.items():
         channel = get_tariff_channel(key)
-        if channel and channel[2]:
+        if channel and channel.get('invite_link'):
             status = "✅ настроен"
-            link_preview = channel[2][:30] + "..." if len(channel[2]) > 30 else channel[2]
+            link_preview = channel['invite_link'][:30] + "..." if len(channel['invite_link']) > 30 else channel['invite_link']
             text += f"• {tariff['name_ru']}: {status}\n  🔗 {link_preview}\n\n"
         else:
             text += f"• {tariff['name_ru']}: ❌ не настроен\n\n"
@@ -1391,11 +1306,10 @@ async def admin_edit_channel(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
     
-    # Создаем клавиатуру с выбором тарифа
     buttons = []
     for key, tariff in TARIFFS.items():
         channel = get_tariff_channel(key)
-        status = "✅" if channel and channel[2] else "❌"
+        status = "✅" if channel and channel.get('invite_link') else "❌"
         buttons.append([InlineKeyboardButton(
             text=f"{status} {tariff['name_ru']}", 
             callback_data=f"admin_channel_{key}"
@@ -1423,13 +1337,13 @@ async def admin_channel_set(callback: CallbackQuery, state: FSMContext):
     
     text = f"📋 <b>Настройка: {tariff['name_ru']}</b>\n\n"
     
-    if channel and channel[1]:
-        text += f"🆔 ID канала: <code>{channel[1]}</code>\n"
+    if channel and channel.get('channel_id'):
+        text += f"🆔 ID канала: <code>{channel['channel_id']}</code>\n"
     else:
         text += "🆔 ID канала: ❌ не задан\n"
     
-    if channel and channel[2]:
-        text += f"🔗 Ссылка-приглашение: {channel[2]}\n"
+    if channel and channel.get('invite_link'):
+        text += f"🔗 Ссылка-приглашение: {channel['invite_link']}\n"
     else:
         text += "🔗 Ссылка-приглашение: ❌ не задана\n"
     
@@ -1467,7 +1381,6 @@ async def admin_set_invite_link(message: Message, state: FSMContext):
     channel_id = data.get("admin_channel_id")
     invite_link = message.text.strip()
     
-    # Сохраняем в базу
     set_tariff_channel(tariff_key, channel_id, invite_link)
     
     tariff = TARIFFS[tariff_key]
@@ -1492,7 +1405,6 @@ async def admin_create_key(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
     
-    # Создаем клавиатуру с выбором тарифа
     buttons = []
     for key, tariff in TARIFFS.items():
         buttons.append([InlineKeyboardButton(
@@ -1555,7 +1467,6 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     tariff_key = data.get("admin_key_tariff")
     
-    # Создаем ключ
     key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
     
     if key:
@@ -1593,13 +1504,13 @@ async def admin_promocodes(callback: CallbackQuery, state: FSMContext):
     
     if promocodes:
         for pc in promocodes:
-            code = pc[2]
-            discount = pc[3]
-            expires = pc[4]
-            status = "✅ активен" if (expires is None or expires > datetime.now()) else "❌ истек"
+            code = pc['code']
+            discount = pc['discount_percent']
+            expires = pc.get('expires_at')
+            status = "✅ активен" if (expires is None or datetime.fromisoformat(expires) > datetime.now()) else "❌ истек"
             text += f"• <b>{code}</b> - {discount}% ({status})\n"
             if expires:
-                text += f"  До: {expires.strftime('%d.%m.%Y %H:%M')}\n"
+                text += f"  До: {datetime.fromisoformat(expires).strftime('%d.%m.%Y %H:%M')}\n"
             text += "\n"
     else:
         text += "❌ Нет созданных промокодов\n\n"
@@ -1693,7 +1604,6 @@ async def admin_promo_minutes(message: Message, state: FSMContext):
     code = data.get("admin_promo_code")
     discount = data.get("admin_promo_discount")
     
-    # Создаем промокод
     create_promo_code(code, discount, expires_minutes, message.from_user.id)
     
     expires_text = "Бессрочно" if expires_minutes is None else f"{expires_minutes} минут"
@@ -1728,9 +1638,9 @@ async def admin_delete_promo(callback: CallbackQuery, state: FSMContext):
     
     buttons = []
     for pc in promocodes:
-        code = pc[2]
+        code = pc['code']
         buttons.append([InlineKeyboardButton(
-            text=f"🗑️ {code} ({pc[3]}%)", 
+            text=f"🗑️ {code} ({pc['discount_percent']}%)", 
             callback_data=f"admin_del_promo_{code}"
         )])
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="admin_promocodes")])
@@ -1760,7 +1670,7 @@ async def admin_del_promo(callback: CallbackQuery):
     )
 
 # ==================================================
-# АДМИН: РАССЫЛКА (УЖЕ ЕСТЬ)
+# АДМИН: РАССЫЛКА
 # ==================================================
 
 @dp.callback_query(F.data == "admin_mailing")
@@ -1845,12 +1755,12 @@ async def admin_stats(callback: CallbackQuery):
     stats = get_subscription_stats()
     
     # Подсчет ключей
-    with engine.connect() as conn:
-        keys_count = conn.execute(text("SELECT COUNT(*) FROM subscription_keys")).fetchone()[0] or 0
+    keys = get_all_subscription_keys()
+    keys_count = len(keys)
     
     # Подсчет промокодов
-    with engine.connect() as conn:
-        promo_count = conn.execute(text("SELECT COUNT(*) FROM promo_codes")).fetchone()[0] or 0
+    promos = get_all_promo_codes()
+    promo_count = len(promos)
     
     text = f"""📊 <b>Статистика бота</b>
 
@@ -1861,14 +1771,14 @@ async def admin_stats(callback: CallbackQuery):
 🏷️ Активных промокодов: {promo_count}
 
 📌 <b>Статус бота:</b>
-✅ Supabase подключена
+✅ Supabase REST API подключена
 ✅ SQLite работает
 ✅ CryptoBot {'✅' if CRYPTOBOT_API_KEY else '❌'}"""
 
     await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
 
 # ==================================================
-# ОБРАБОТЧИКИ ОПЛАТ (ОСТАЛИСЬ БЕЗ ИЗМЕНЕНИЙ)
+# ОБРАБОТЧИКИ ОПЛАТ
 # ==================================================
 
 @dp.callback_query(F.data == "back_to_admin")
@@ -1906,12 +1816,11 @@ async def back_to_subs(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
 # ==================================================
-# ПРОМОКОДЫ (ОБНОВЛЕННЫЕ)
+# ПРОМОКОДЫ
 # ==================================================
 
 @dp.message(Command("promo"))
 async def cmd_promo(message: Message, state: FSMContext):
-    """Ввод промокода"""
     lang = await get_lang(state)
     await state.update_data(waiting_for_promo=True)
     await message.answer(LANG[lang]["enter_promo"])
@@ -1924,11 +1833,9 @@ async def process_promo(message: Message, state: FSMContext):
     tariff_key = data.get("current_tariff")
     lang = await get_lang(state)
     
-    # Проверяем в базе данных
     promo = get_promo_code(promo_code)
     
     if not promo:
-        # Проверяем в захардкоженных
         if promo_code in PROMO_CODES:
             discount = PROMO_CODES[promo_code]
             await state.update_data(discount=discount, current_tariff=tariff_key)
@@ -1955,13 +1862,12 @@ async def process_promo(message: Message, state: FSMContext):
             await message.answer(LANG[lang]["promo_fail"])
             return
     
-    # Проверяем срок действия
-    expires_at = promo[4]
-    if expires_at and expires_at < datetime.now():
+    expires_at = promo.get('expires_at')
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
         await message.answer(LANG[lang]["promo_expired"])
         return
     
-    discount = promo[3]
+    discount = promo['discount_percent']
     await state.update_data(discount=discount, current_tariff=tariff_key)
     
     if tariff_key and tariff_key in TARIFFS:
@@ -1983,6 +1889,813 @@ async def process_promo(message: Message, state: FSMContext):
         await state.clear()
 
 # ==================================================
+# ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ
+# ==================================================
+
+@dp.callback_query(F.data == "back_to_prices")
+async def back_to_prices(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
+
+@dp.callback_query(F.data == "show_paki")
+async def show_paki(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_paki_keyboard(lang))
+
+@dp.callback_query(F.data.startswith("tariff_"))
+async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("tariff_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+    
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} 🇷🇺RUB</s> → {new_price} 🇷🇺RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} 🇷🇺RUB"
+    
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.edit_text(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("enter_promo_"))
+async def enter_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("enter_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.update_data(current_tariff=tariff_key)
+    await callback.message.edit_text(
+        LANG[lang]["enter_promo"],
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=LANG[lang]["btn_cancel"], callback_data=f"cancel_promo_{tariff_key}")]])
+    )
+    await state.set_state(PromoStates.waiting_for_promo)
+
+@dp.callback_query(F.data.startswith("cancel_promo_"))
+async def cancel_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("cancel_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.clear()
+    await callback.message.delete()
+    tariff = TARIFFS[tariff_key]
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> -> {new_price} RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} RUB"
+
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.answer(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("choose_pay_"))
+async def choose_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("choose_pay_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    await choose_payment_logic(callback, state, tariff_key)
+
+# ==================================================
+# ОПЛАТА ДЛЯ ДРУГА
+# ==================================================
+
+@dp.callback_query(F.data.startswith("pay_for_friend_"))
+async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("pay_for_friend_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    await choose_payment_logic(callback, state, tariff_key)
+
+# ==================================================
+# ОПЛАТА НА КАРТУ
+# ==================================================
+
+@dp.callback_query(F.data.startswith("pay_card_"))
+async def process_card_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("pay_card_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    final_price = int(TARIFFS[tariff_key]['price_rub'] * (1 - discount / 100))
+    
+    text = LANG[lang]["pay_card"].format(
+        final=final_price,
+        user_id=user_id
+    )
+    
+    copy_button = InlineKeyboardButton(text="📋 Скопировать номер карты", callback_data=f"copy_card_{tariff_key}")
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [copy_button],
+            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ]),
+        disable_web_page_preview=True
+    )
+
+@dp.callback_query(F.data.startswith("copy_card_"))
+async def copy_card(callback: CallbackQuery):
+    await callback.answer("💳 Номер карты скопирован!\n\n2200190284092510", show_alert=True)
+
+@dp.callback_query(F.data.startswith("i_paid_"))
+async def i_paid(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("i_paid_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.update_data(current_tariff=tariff_key)
+    
+    text = LANG[lang]["i_paid_confirm"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=LANG[lang]["btn_cancel"], callback_data=f"cancel_payment_{tariff_key}")]
+        ])
+    )
+    await state.set_state(PaymentStates.waiting_for_receipt)
+
+@dp.message(PaymentStates.waiting_for_receipt, F.photo | F.document | F.video)
+async def process_receipt(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    username = message.from_user.username or "без username"
+    data = await state.get_data()
+    tariff_key = data.get("current_tariff")
+    lang = await get_lang(state)
+    
+    if not tariff_key or tariff_key not in TARIFFS:
+        await state.clear()
+        await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    discount = data.get("discount", 0)
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    media_file_id = None
+    media_type = None
+    message_text = message.caption or ""
+    
+    if message.photo:
+        media_file_id = message.photo[-1].file_id
+        media_type = "photo"
+    elif message.video:
+        media_file_id = message.video.file_id
+        media_type = "video"
+    elif message.document:
+        media_file_id = message.document.file_id
+        media_type = "document"
+    
+    request_id = add_payment_request(user_id, username, tariff_key, final_price, message_text, media_file_id, media_type)
+    
+    if not request_id:
+        await message.answer("❌ Ошибка сохранения заявки. Попробуйте позже.")
+        await state.clear()
+        return
+    
+    user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
+    tariff_name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    media_info = ""
+    if media_file_id:
+        media_info = f"📎 <b>Есть вложение:</b> {media_type}"
+    
+    admin_text = LANG[lang]["new_payment_request"].format(
+        user_link=user_link,
+        user_id=user_id,
+        tariff_name=tariff_name,
+        amount=final_price,
+        message_text=message_text or "Нет сообщения",
+        media_info=media_info
+    )
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            if media_file_id and media_type == "photo":
+                await bot.send_photo(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif media_file_id and media_type == "video":
+                await bot.send_video(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif media_file_id and media_type == "document":
+                await bot.send_document(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            else:
+                await bot.send_message(admin_id, admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+        except Exception as e:
+            logging.error(f"Ошибка отправки заявки админу {admin_id}: {e}")
+    
+    await message.answer(LANG[lang]["payment_receipt_received"])
+    await state.clear()
+
+@dp.message(PaymentStates.waiting_for_receipt)
+async def process_receipt_invalid(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    await message.answer("❌ Пожалуйста, отправьте ЧЕК в виде фото или скриншота (не документом!).")
+
+@dp.callback_query(F.data.startswith("cancel_payment_"))
+async def cancel_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("cancel_payment_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.clear()
+    await callback.message.delete()
+    
+    tariff = TARIFFS[tariff_key]
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> -> {new_price} RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} RUB"
+
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.answer(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("pay_stars_"))
+async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("pay_stars_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    final_price = int(tariff['price_stars'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_stars']} STARS</s> → {final_price} STARS (-{discount}%)\n"
+    else:
+        price_line = f"💰 Цена: {final_price} STARS\n"
+    
+    support = SUPPORT_CONTACT_RU if lang == "ru" else SUPPORT_CONTACT_EN
+    
+    text = LANG[lang]["pay_stars"].format(
+        name=name,
+        duration=duration,
+        price_line=price_line,
+        final=final_price,
+        support=support
+    )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ]),
+        disable_web_page_preview=True
+    )
+
+# ==================================================
+# КРИПТОВАЛЮТА
+# ==================================================
+
+@dp.callback_query(F.data.startswith("pay_crypto_"))
+async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("pay_crypto_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    
+    text = LANG[lang]["pay_crypto_choose"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_crypto_currency_keyboard(tariff_key, 0, lang)
+    )
+
+@dp.callback_query(F.data.startswith("crypto_usdt_"))
+async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("crypto_usdt_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    final_usdt = round_to_half(final_rub / USDT_RATE)
+    
+    invoice_data = await create_crypto_invoice_usd(final_usdt, user_id, tariff_key, "USDT")
+    
+    if invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "USDT")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        await callback.message.edit_text(
+            LANG[lang]["crypto_error"],
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_ton_"))
+async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("crypto_ton_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    final_usd = round_to_half(final_rub / USD_RATE)
+    
+    # 1 GRAM = 1.34 USD
+    final_gram = round_to_half(final_usd / GRAM_RATE)
+    
+    invoice_data = await create_crypto_invoice_usd(final_gram, user_id, tariff_key, "TON")
+    
+    if invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_gram, "TON")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        await callback.message.edit_text(
+            LANG[lang]["crypto_error"],
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_btc_"))
+async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("crypto_btc_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    final_usd = round_to_half(final_rub / USD_RATE)
+    
+    final_btc = round(final_usd / BTC_RATE, 8)
+    
+    invoice_data = await create_crypto_invoice_usd(final_btc, user_id, tariff_key, "BTC")
+    
+    if invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        await callback.message.edit_text(
+            LANG[lang]["crypto_error"],
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_direct_"))
+async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("crypto_direct_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    
+    text = LANG[lang]["crypto_direct"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ])
+    )
+
+# ==================================================
+# ВЕБХУК ДЛЯ CRYPTOBOT
+# ==================================================
+
+async def send_crypto_success(user_id: int, tariff_key: str):
+    try:
+        lang = "ru"
+        text = LANG[lang]["crypto_payment_success"]
+        await bot.send_message(user_id, text)
+    except Exception as e:
+        logging.error(f"Ошибка отправки сообщения об успешной оплате: {e}")
+
+# ==================================================
+# АДМИН: ЗАЯВКИ НА ОПЛАТУ
+# ==================================================
+
+@dp.callback_query(F.data == "admin_payment_requests")
+async def admin_payment_requests(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, user_id, username, tariff_key, amount, created_at, status FROM payment_requests ORDER BY created_at DESC LIMIT 20')
+    requests = cursor.fetchall()
+    conn.close()
+    
+    if not requests:
+        await callback.message.edit_text("📋 <b>Заявки на оплату</b>\n\nНет заявок на проверку.", reply_markup=get_admin_keyboard())
+        await callback.answer()
+        return
+    
+    text = "📋 <b>Последние заявки на оплату</b>\n\n"
+    for req in requests:
+        status_emoji = "⏳" if req[6] == "pending" else "✅" if req[6] == "confirmed" else "❌"
+        text += f"{status_emoji} #{req[0]} | Пользователь: {req[2]} | {req[4]} RUB | {req[5]}\n"
+    
+    text += "\nДля просмотра заявки нажмите /view_request <номер>"
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
+    await callback.answer()
+
+@dp.message(Command("view_request"))
+async def view_request(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    try:
+        request_id = int(message.text.split()[1])
+    except:
+        await message.answer("❌ Использование: /view_request <id>")
+        return
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM payment_requests WHERE id = ?', (request_id,))
+    req = cursor.fetchone()
+    conn.close()
+    
+    if not req:
+        await message.answer("❌ Заявка не найдена.")
+        return
+    
+    lang = await get_lang(message)
+    tariff_name = TARIFFS.get(req[3], {}).get('name_ru', req[3])
+    
+    text = f"""
+📋 <b>Заявка #{req[0]}</b>
+
+👤 Пользователь: <a href='tg://user?id={req[1]}'>{req[2]}</a>
+🆔 ID: <code>{req[1]}</code>
+📋 Тариф: {tariff_name}
+💰 Сумма: {req[4]} RUB
+📝 Сообщение: {req[5] or "Нет"}
+📎 Медиа: {req[7] or "Нет"}
+📅 Создана: {req[8]}
+📊 Статус: {req[6]}
+"""
+    
+    if req[7]:
+        try:
+            if req[7] == "photo":
+                await bot.send_photo(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif req[7] == "video":
+                await bot.send_video(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif req[7] == "document":
+                await bot.send_document(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            else:
+                await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+        except Exception as e:
+            await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+    else:
+        await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+
+@dp.callback_query(F.data.startswith("write_user_"))
+async def write_user(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("write_user_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    user_id = req[1]
+    username = req[2]
+    
+    try:
+        await bot.send_message(user_id, "👋 Администратор свяжется с вами лично в ближайшее время.")
+        await callback.answer(f"✅ Открыт чат с пользователем {username}", show_alert=True)
+        await callback.message.answer(f"✍️ Напишите пользователю: <a href='tg://user?id={user_id}'>{username}</a>")
+    except Exception as e:
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+@dp.callback_query(F.data.startswith("write_via_bot_"))
+async def write_via_bot(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("write_via_bot_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    await state.update_data(reply_request_id=request_id)
+    await callback.message.answer("✍️ Напишите сообщение, которое будет отправлено пользователю от имени бота:")
+    await state.set_state(AdminReplyStates.waiting_for_reply)
+    await callback.answer()
+
+@dp.message(AdminReplyStates.waiting_for_reply)
+async def process_admin_reply(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    request_id = data.get("reply_request_id")
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await message.answer("❌ Заявка не найдена.")
+        await state.clear()
+        return
+    
+    user_id = req[1]
+    
+    try:
+        await bot.send_message(user_id, f"📨 <b>Сообщение от администратора:</b>\n\n{message.text}")
+        await message.answer("✅ Сообщение отправлено пользователю!")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка отправки: {e}")
+    
+    await state.clear()
+
+@dp.callback_query(F.data.startswith("confirm_payment_"))
+async def confirm_payment(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("confirm_payment_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    user_id = req[1]
+    tariff_key = req[3]
+    
+    add_paid_tariff(user_id, tariff_key)
+    
+    # Добавляем подписку
+    tariff = TARIFFS.get(tariff_key)
+    if tariff and tariff.get('duration_days') is not None:
+        extend_subscription(user_id, tariff_key, tariff['duration_days'])
+    else:
+        add_subscription(user_id, tariff_key, None)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE payment_requests SET status = "confirmed" WHERE id = ?', (request_id,))
+    conn.commit()
+    conn.close()
+    
+    lang = "ru"
+    chat_id = CHANNEL_IDS.get(tariff_key)
+    if chat_id:
+        link = await create_one_time_link(chat_id)
+        if link:
+            text = LANG[lang]["payment_success"].format(link=link)
+            await bot.send_message(user_id, text, disable_web_page_preview=False)
+        else:
+            await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
+    else:
+        await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
+    
+    await callback.message.delete()
+    await callback.message.answer(f"✅ Оплата по заявке #{request_id} подтверждена! Пользователь уведомлен.")
+    await callback.answer()
+
+@dp.callback_query(F.data == "back_to_admin")
+async def back_to_admin(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    user_count = get_user_count()
+    stats = get_subscription_stats()
+    
+    text = LANG["ru"]["admin_panel"].format(
+        user_count=user_count,
+        subscriptions_count=stats['total'],
+        expiring_tomorrow=stats['expiring_tomorrow']
+    )
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
+
+# ==================================================
 # ЗАПУСК (С ПЕРИОДИЧЕСКИМИ ЗАДАЧАМИ)
 # ==================================================
 
@@ -1992,43 +2705,36 @@ async def check_expired_subscriptions():
         try:
             logging.info("🔄 Проверка истекших подписок...")
             
-            # Проверяем истекшие
             expired = get_expired_subscriptions()
             for sub in expired:
-                user_id = sub[1]
-                tariff_key = sub[2]
+                user_id = sub['user_id']
+                tariff_key = sub['tariff_key']
                 tariff_name = get_tariff_name(tariff_key, "ru")
                 
-                # Получаем канал
                 channel = get_tariff_channel(tariff_key)
-                if channel and channel[1]:
+                if channel and channel.get('channel_id'):
                     try:
-                        chat_id = int(channel[1])
+                        chat_id = int(channel['channel_id'])
                         await bot.ban_chat_member(chat_id, user_id)
-                        # Разбаниваем чтобы мог перезайти если оплатит
                         await bot.unban_chat_member(chat_id, user_id)
                         logging.info(f"✅ Кикнут пользователь {user_id} из канала {chat_id}")
                     except Exception as e:
                         logging.error(f"Ошибка кика: {e}")
                 
-                # Помечаем подписку как истекшую
                 expire_subscription(user_id, tariff_key)
                 
-                # Отправляем уведомление
                 try:
                     text = LANG["ru"]["subscription_expired"].format(tariff_name=tariff_name)
                     await bot.send_message(user_id, text)
                 except Exception as e:
                     logging.error(f"Ошибка отправки уведомления: {e}")
             
-            # Проверяем подписки, истекающие через 3 дня
             expiring_soon = get_expiring_soon_subscriptions(3)
             for sub in expiring_soon:
-                user_id = sub[1]
-                tariff_key = sub[2]
+                user_id = sub['user_id']
+                tariff_key = sub['tariff_key']
                 tariff_name = get_tariff_name(tariff_key, "ru")
                 
-                # Отправляем напоминание
                 try:
                     text = LANG["ru"]["subscription_expiring_soon"].format(
                         tariff_name=tariff_name,
@@ -2043,8 +2749,7 @@ async def check_expired_subscriptions():
         except Exception as e:
             logging.error(f"Ошибка в check_expired_subscriptions: {e}")
         
-        # Ждем 12 часов
-        await asyncio.sleep(43200)  # 12 часов
+        await asyncio.sleep(43200)
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -2056,14 +2761,13 @@ async def main():
     
     print("=" * 60)
     print("🚀 ОСНОВНОЙ БОТ ЗАПУЩЕН!")
-    print("📦 База данных: Supabase + SQLite")
+    print("📦 База данных: Supabase REST API + SQLite")
     print(f"🪙 CRYPTO_TOKEN: {'✅' if CRYPTOBOT_API_KEY else '❌'}")
-    print(f"🗄️ SUPABASE: {'✅' if SUPABASE_URL else '❌'}")
+    print(f"🗄️ SUPABASE: {'✅' if SUPABASE_URL and SUPABASE_KEY else '❌'}")
     print("📞 Поддержка: @kasgd")
     print("👥 Админы: " + ", ".join(str(admin) for admin in ADMIN_IDS))
     print("=" * 60)
     
-    # Запускаем периодическую проверку подписок
     asyncio.create_task(check_expired_subscriptions())
     
     await bot.delete_webhook(drop_pending_updates=True)
