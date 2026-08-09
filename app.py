@@ -140,9 +140,8 @@ CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
 CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
 
 # КУРСЫ
-USDT_RATE = 80
-TON_RATE = 150
-BTC_RATE = 4000000
+USDT_RATE = 80  # 1 USDT = 80 RUB
+USD_RATE = 80   # 1 USD = 80 RUB
 
 # ==================================================
 # ID КАНАЛОВ
@@ -621,8 +620,8 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
     
     await message.answer(text, disable_web_page_preview=False)
 
-async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
-    """Создает счет в CryptoBot и возвращает данные"""
+async def create_crypto_invoice_usd(amount_usd: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
+    """Создает счет в CryptoBot с суммой в USD"""
     if not CRYPTOBOT_API_KEY:
         logging.error("CRYPTOBOT_API_KEY не задан!")
         return None
@@ -634,7 +633,7 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
     }
     payload = {
         "asset": asset,
-        "amount": str(amount),
+        "amount": str(amount_usd),
         "description": f"Оплата тарифа {tariff_key} для пользователя {user_id}",
         "paid_btn_name": "openChannel",
         "paid_btn_url": "https://t.me/kasgd",
@@ -769,9 +768,9 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
 
 def get_crypto_currency_keyboard(tariff_key, discount_percent=0, lang="ru"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_crypto_direct"], callback_data=f"crypto_direct_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
@@ -1547,7 +1546,7 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     )
 
 # ==================================================
-# КРИПТОВАЛЮТА
+# КРИПТОВАЛЮТА - РАБОТАЕТ КАК В ПРИМЕРЕ
 # ==================================================
 
 @dp.callback_query(F.data.startswith("pay_crypto_"))
@@ -1569,9 +1568,6 @@ async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
         reply_markup=get_crypto_currency_keyboard(tariff_key, 0, lang)
     )
 
-# ==================================================
-# КРИПТОВАЛЮТА - С АКТУАЛЬНЫМИ КУРСАМИ
-# ==================================================
 
 @dp.callback_query(F.data.startswith("crypto_usdt_"))
 async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
@@ -1594,7 +1590,7 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     
     final_usdt = round_to_half(final_rub / USDT_RATE)
     
-    invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "USDT")
+    invoice_data = await create_crypto_invoice_usd(final_usdt, user_id, tariff_key, "USDT")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
@@ -1643,20 +1639,19 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Считаем сумму в TON по актуальному курсу
-    final_ton = round_to_half(final_rub / TON_RATE)
+    final_usd = round_to_half(final_rub / USD_RATE)
     
-    invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
+    invoice_data = await create_crypto_invoice_usd(final_usd, user_id, tariff_key, "TON")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_ton, "TON")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usd, "TON")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
             name=name,
-            amount=final_ton,
+            amount=f"{final_usd} USD",
             asset="TON"
         )
         
@@ -1695,20 +1690,19 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Считаем сумму в BTC по актуальному курсу
-    final_btc = round(final_rub / BTC_RATE, 8)
+    final_usd = round_to_half(final_rub / USD_RATE)
     
-    invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
+    invoice_data = await create_crypto_invoice_usd(final_usd, user_id, tariff_key, "BTC")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usd, "BTC")
         
         text = LANG[lang]["pay_crypto_invoice"].format(
             name=name,
-            amount=final_btc,
+            amount=f"{final_usd} USD",
             asset="BTC"
         )
         
@@ -1726,6 +1720,7 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
         )
+
 
 @dp.callback_query(F.data.startswith("crypto_direct_"))
 async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
@@ -1985,8 +1980,7 @@ async def main():
     print("📦 База данных: Supabase + SQLite")
     print(f"🪙 CRYPTO_TOKEN: {CRYPTOBOT_API_KEY[:10]}..." if CRYPTOBOT_API_KEY else "🪙 CRYPTO_TOKEN: НЕ ЗАДАН!")
     print(f"💵 Курс USDT: {USDT_RATE} RUB")
-    print(f"💎 Курс TON: {TON_RATE} RUB")
-    print(f"₿ Курс BTC: {BTC_RATE} RUB")
+    print(f"💵 Курс USD: {USD_RATE} RUB")
     print("📞 Поддержка: @kasgd")
     print("👥 Админы: " + ", ".join(str(admin) for admin in ADMIN_IDS))
     print("=" * 60)
