@@ -94,14 +94,28 @@ def get_user_count():
 
 def add_user(user_id: int, first_name: str, username: str = None):
     try:
-        supabase.table('users').upsert({
-            'user_id': user_id,
-            'first_name': first_name,
-            'username': username
-        }).execute()
-        return True
+        # Проверяем, существует ли пользователь
+        response = supabase.table('users').select('user_id').eq('user_id', user_id).execute()
+        
+        if response.data:
+            # Если существует - обновляем
+            supabase.table('users').update({
+                'first_name': first_name,
+                'username': username
+            }).eq('user_id', user_id).execute()
+            logging.info(f"✅ Обновлен пользователь {user_id} ({first_name})")
+            return True
+        else:
+            # Если нет - создаем
+            supabase.table('users').insert({
+                'user_id': user_id,
+                'first_name': first_name,
+                'username': username
+            }).execute()
+            logging.info(f"✅ Добавлен новый пользователь {user_id} ({first_name})")
+            return True
     except Exception as e:
-        logging.error(f"Ошибка добавления пользователя: {e}")
+        logging.error(f"❌ Ошибка добавления пользователя {user_id}: {e}")
         return False
 
 def get_active_subscriptions(user_id: int):
