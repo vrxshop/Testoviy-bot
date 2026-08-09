@@ -558,6 +558,8 @@ CHANNEL_IDS = {
 # ==================================================
 LANG = {
     "ru": {
+        "no_subs": "⌛️ <b>У Вас нет действующих подписок.</b>\n\nВыберите тариф, чтобы оформить доступ.",
+        "access_info": "✅ <b>Вход открыт.</b>\n\nНажмите на кнопку ВСТУПИТЬ, затем Подать заявку и снова ВСТУПИТЬ:",
         "btn_prices": "💵 Тарифы",
         "btn_subs": "⏳ Мои подписки",
         "prices_menu": "📋 <b>Прайс</b>\n\nВыберите тариф, чтобы узнать подробности и оформить покупку.",
@@ -1115,13 +1117,12 @@ def get_payment_request_keyboard(request_id, lang="ru"):
     ])
 
 def get_subscription_keyboard(subscriptions, lang="ru"):
-    """Клавиатура для раздела Мои подписки"""
     buttons = []
     for sub in subscriptions:
         tariff_key = sub['tariff_key']
         name = get_tariff_name(tariff_key, lang)
         buttons.append([InlineKeyboardButton(text=name, callback_data=f"access_{tariff_key}")])
-    buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
+    buttons.append([InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_prices")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_access_keyboard(tariff_key, lang="ru"):
@@ -1216,8 +1217,11 @@ async def cmd_start(message: Message, state: FSMContext):
         reply_markup=get_main_keyboard(lang)
     )
     
-    # ТРЕТЬЕ сообщение - тарифы (если хочешь сразу показывать)
-    # await message.answer(LANG[lang]["prices_menu"], reply_markup=get_tariff_keyboard(lang))
+    # ТРЕТЬЕ сообщение - ТАРИФЫ (добавляем!)
+    await message.answer(
+        LANG[lang]["prices_menu"],
+        reply_markup=get_tariff_keyboard(lang)
+    )
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
@@ -1944,6 +1948,38 @@ async def show_subscriptions(message: Message, state: FSMContext):
         await message.answer(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
     else:
         await message.answer(LANG[lang]["no_subs"])
+
+@dp.callback_query(F.data.startswith("access_"))
+async def access_subscription(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("access_", "")
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    # Проверяем подписку
+    sub = get_subscription_by_tariff(user_id, tariff_key)
+    if not sub:
+        await callback.message.edit_text("❌ У вас нет активной подписки на этот тариф.")
+        return
+    
+    # Получаем ссылку на канал
+    tariff_channel = get_tariff_channel(tariff_key)
+    
+    if tariff_channel and tariff_channel.get('invite_link'):
+        text = LANG[lang]["access_info"]
+        invite_link = tariff_channel['invite_link']
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 ВСТУПИТЬ", url=invite_link)],
+                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
+                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
+            ])
+        )
+    else:
+        await callback.message.edit_text("❌ Для этого тарифа еще не настроена ссылка на канал. Обратитесь к администратору.")
 
 @dp.callback_query(F.data.startswith("enter_promo_"))
 async def enter_promo(callback: CallbackQuery, state: FSMContext):
