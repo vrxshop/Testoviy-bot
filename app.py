@@ -2659,35 +2659,43 @@ async def confirm_payment(callback: CallbackQuery):
     user_id = req[1]
     tariff_key = req[3]
     
-    add_paid_tariff(user_id, tariff_key)
+    # ✅ НЕ ДОБАВЛЯЕМ ПОДПИСКУ СРАЗУ!
+    # Только создаем ключ-ссылку
     
-    # Добавляем подписку
+    # Получаем тариф
     tariff = TARIFFS.get(tariff_key)
-    if tariff and tariff.get('duration_days') is not None:
-        extend_subscription(user_id, tariff_key, tariff['duration_days'])
-    else:
-        add_subscription(user_id, tariff_key, None)
+    duration_days = tariff.get('duration_days') if tariff else None
     
+    # Создаем одноразовый ключ
+    key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
+    
+    if key:
+        # Отправляем пользователю ссылку-ключ
+        link = f"https://t.me/{bot.username}?start={key}"
+        await bot.send_message(
+            user_id, 
+            f"✅ Оплата подтверждена!\n\n"
+            f"🔑 Ваш одноразовый ключ: <code>{key}</code>\n"
+            f"🔗 Ссылка для активации: {link}\n\n"
+            f"⚠️ Ключ одноразовый! После перехода по ссылке подписка будет активирована."
+        )
+        
+        # Уведомляем админа
+        await callback.message.answer(
+            f"✅ Ключ создан и отправлен пользователю!\n"
+            f"🔑 Ключ: <code>{key}</code>"
+        )
+    else:
+        await callback.message.answer("❌ Ошибка создания ключа!")
+    
+    # Обновляем статус заявки
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('UPDATE payment_requests SET status = "confirmed" WHERE id = ?', (request_id,))
     conn.commit()
     conn.close()
     
-    lang = "ru"
-    chat_id = CHANNEL_IDS.get(tariff_key)
-    if chat_id:
-        link = await create_one_time_link(chat_id)
-        if link:
-            text = LANG[lang]["payment_success"].format(link=link)
-            await bot.send_message(user_id, text, disable_web_page_preview=False)
-        else:
-            await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
-    else:
-        await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
-    
     await callback.message.delete()
-    await callback.message.answer(f"✅ Оплата по заявке #{request_id} подтверждена! Пользователь уведомлен.")
     await callback.answer()
 
 @dp.callback_query(F.data == "back_to_admin")
