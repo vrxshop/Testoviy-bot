@@ -7,10 +7,13 @@ import sqlite3
 import threading
 import re
 import aiohttp
+import random
+import string
+import socket
 from datetime import datetime, timedelta
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ChatJoinRequest
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -18,7 +21,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy import create_engine, text
+from supabase import create_client, Client
 
 # ==================================================
 # FLASK
@@ -33,109 +36,353 @@ def home():
 def health():
     return "OK", 200
 
+@flask_app.route('/crypto_webhook', methods=['POST'])
+def crypto_webhook():
+    """Обработчик вебхука от CryptoBot"""
+    try:
+        data = request.get_json()
+        logging.info(f"Получен вебхук: {data}")
+        
+        if data.get("update_type") == "invoice_paid":
+            invoice_id = data.get("invoice_id", "")
+            
+            invoice = get_crypto_invoice(invoice_id)
+            if invoice:
+                user_id = invoice[1]
+                tariff_key = invoice[2]
+                mark_invoice_paid(invoice_id)
+                
+                asyncio.create_task(send_crypto_success(user_id, tariff_key))
+        
+        return "OK", 200
+    except Exception as e:
+        logging.error(f"Ошибка вебхука: {e}")
+        return "Error", 500
+
 # ==================================================
-# SUPABASE
+# SUPABASE (REST API)
 # ==================================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-engine = create_engine(SUPABASE_URL, echo=False, pool_pre_ping=True)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logging.error("❌ SUPABASE_URL или SUPABASE_KEY не заданы!")
+    exit(1)
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+logging.info("✅ Supabase REST API подключен")
+
+# ==================================================
+# ФУНКЦИИ РАБОТЫ С БАЗОЙ (REST API)
+# ==================================================
 
 def get_all_users():
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT user_id FROM users"))
-            return [row[0] for row in result]
+        response = supabase.table('users').select('user_id').execute()
+        return [row['user_id'] for row in response.data]
     except Exception as e:
         logging.error(f"Ошибка получения пользователей: {e}")
         return []
 
 def get_user_count():
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM users"))
-            return result.fetchone()[0] or 0
+        response = supabase.table('users').select('*', count='exact').execute()
+        return response.count or 0
     except Exception as e:
         logging.error(f"Ошибка получения количества пользователей: {e}")
         return 0
 
 def add_user(user_id: int, first_name: str, username: str = None):
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO users (user_id, first_name, username) VALUES (:id, :name, :uname) ON CONFLICT (user_id) DO NOTHING"),
-                {"id": user_id, "name": first_name, "uname": username}
-            )
-            conn.commit()
-        return True
+        logging.info(f"🔍 add_user вызван: ID={user_id}, Name={first_name}, Username={username}")
+        
+        response = supabase.table('users').select('user_id').eq('user_id', user_id).execute()
+        logging.info(f"📊 Результат проверки: {response.data}")
+        
+        if response.data:
+            logging.info(f"🔄 Обновление пользователя {user_id}")
+            update_response = supabase.table('users').update({
+                'first_name': first_name,
+                'username': username
+            }).eq('user_id', user_id).execute()
+            logging.info(f"📊 Обновлено: {update_response.data}")
+            return True
+        else:
+            logging.info(f"➕ Создание пользователя {user_id}")
+            insert_response = supabase.table('users').insert({
+                'user_id': user_id,
+                'first_name': first_name,
+                'username': username
+            }).execute()
+            logging.info(f"📊 Создано: {insert_response.data}")
+            return True
     except Exception as e:
-        logging.error(f"Ошибка добавления пользователя: {e}")
+        logging.error(f"❌ Ошибка добавления пользователя {user_id}: {e}")
         return False
 
-def add_user_discount(user_id: int, discount_code: str, discount_percent: int):
+def get_active_subscriptions(user_id: int):
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO user_discounts (user_id, discount_code, discount_percent) VALUES (:id, :code, :percent) ON CONFLICT (user_id, discount_code) DO NOTHING"),
-                {"id": user_id, "code": discount_code, "percent": discount_percent}
-            )
-            conn.commit()
-        return True
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .eq('status', 'active')\
+            .execute()
+        return response.data
     except Exception as e:
-        logging.error(f"Ошибка сохранения скидки: {e}")
-        return False
-
-def get_user_discounts(user_id: int):
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT discount_code, discount_percent, used FROM user_discounts WHERE user_id = :id AND used = 0"), {"id": user_id})
-            return result.fetchall()
-    except Exception as e:
-        logging.error(f"Ошибка получения скидок: {e}")
+        logging.error(f"Ошибка получения подписок: {e}")
         return []
 
-def mark_discount_used(user_id: int, discount_code: str):
+def get_subscription_by_tariff(user_id: int, tariff_key: str):
     try:
-        with engine.connect() as conn:
-            conn.execute(text("UPDATE user_discounts SET used = 1 WHERE user_id = :id AND discount_code = :code"), {"id": user_id, "code": discount_code})
-            conn.commit()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('user_id', user_id)\
+            .eq('tariff_key', tariff_key)\
+            .eq('status', 'active')\
+            .execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logging.error(f"Ошибка получения подписки: {e}")
+        return None
+
+def add_subscription(user_id: int, tariff_key: str, duration_days: int = None):
+    try:
+        expires_at = None
+        if duration_days is not None:
+            expires_at = (datetime.now() + timedelta(days=duration_days)).isoformat()
+        
+        supabase.table('subscriptions').insert({
+            'user_id': user_id,
+            'tariff_key': tariff_key,
+            'expires_at': expires_at,
+            'status': 'active'
+        }).execute()
         return True
     except Exception as e:
-        logging.error(f"Ошибка отметки скидки: {e}")
+        logging.error(f"Ошибка добавления подписки: {e}")
         return False
 
-# ==================================================
-# КОНФИГУРАЦИЯ
-# ==================================================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-PROJECT_NAME = "VIP"
-SUPPORT_CONTACT_RU = "https://t.me/kasgd"
-SUPPORT_CONTACT_EN = "https://t.me/kasgd"
-ADMIN_IDS = [8370080332, 8559381302, 8924977674]
+def extend_subscription(user_id: int, tariff_key: str, duration_days: int):
+    try:
+        sub = get_subscription_by_tariff(user_id, tariff_key)
+        if sub and sub.get('expires_at'):
+            expires_at = datetime.fromisoformat(sub['expires_at']) + timedelta(days=duration_days)
+            supabase.table('subscriptions')\
+                .update({'expires_at': expires_at.isoformat()})\
+                .eq('user_id', user_id)\
+                .eq('tariff_key', tariff_key)\
+                .execute()
+        else:
+            add_subscription(user_id, tariff_key, duration_days)
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка продления подписки: {e}")
+        return False
 
-# CRYPTOBOT
-CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
-CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"  # <--- ПРАВИЛЬНЫЙ URL!
+def expire_subscription(user_id: int, tariff_key: str):
+    try:
+        supabase.table('subscriptions')\
+            .update({'status': 'expired'})\
+            .eq('user_id', user_id)\
+            .eq('tariff_key', tariff_key)\
+            .execute()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка отметки подписки: {e}")
+        return False
+
+def get_tariff_channel(tariff_key: str):
+    try:
+        response = supabase.table('tariff_channels')\
+            .select('*')\
+            .eq('tariff_key', tariff_key)\
+            .execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logging.error(f"Ошибка получения канала: {e}")
+        return None
+
+def set_tariff_channel(tariff_key: str, channel_id: str, invite_link: str):
+    try:
+        supabase.table('tariff_channels').upsert({
+            'tariff_key': tariff_key,
+            'channel_id': channel_id,
+            'invite_link': invite_link
+        }).execute()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка сохранения канала: {e}")
+        return False
+
+def create_subscription_key(tariff_key: str, duration_days: int = None, created_by: int = None) -> str:
+    try:
+        key = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+        supabase.table('subscription_keys').insert({
+            'key': key,
+            'tariff_key': tariff_key,
+            'duration_days': duration_days,
+            'created_by': created_by
+        }).execute()
+        return key
+    except Exception as e:
+        logging.error(f"Ошибка создания ключа: {e}")
+        return None
+
+def get_subscription_key(key: str):
+    try:
+        response = supabase.table('subscription_keys')\
+            .select('*')\
+            .eq('key', key)\
+            .execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logging.error(f"Ошибка получения ключа: {e}")
+        return None
+
+def delete_subscription_key(key: str):
+    try:
+        supabase.table('subscription_keys')\
+            .delete()\
+            .eq('key', key)\
+            .execute()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка удаления ключа: {e}")
+        return False
+
+def create_promo_code(code: str, discount_percent: int, expires_minutes: int = None, created_by: int = None):
+    try:
+        expires_at = None
+        if expires_minutes is not None:
+            expires_at = (datetime.now() + timedelta(minutes=expires_minutes)).isoformat()
+        
+        supabase.table('promo_codes').upsert({
+            'code': code.upper(),
+            'discount_percent': discount_percent,
+            'expires_at': expires_at,
+            'created_by': created_by
+        }).execute()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка создания промокода: {e}")
+        return False
+
+def get_promo_code(code: str):
+    try:
+        response = supabase.table('promo_codes')\
+            .select('*')\
+            .eq('code', code.upper())\
+            .execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logging.error(f"Ошибка получения промокода: {e}")
+        return None
+
+def delete_promo_code(code: str):
+    try:
+        supabase.table('promo_codes')\
+            .delete()\
+            .eq('code', code.upper())\
+            .execute()
+        return True
+    except Exception as e:
+        logging.error(f"Ошибка удаления промокода: {e}")
+        return False
+
+def get_all_promo_codes():
+    try:
+        response = supabase.table('promo_codes')\
+            .select('*')\
+            .order('created_at', desc=True)\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения промокодов: {e}")
+        return []
+
+def get_expired_subscriptions():
+    try:
+        now = datetime.now().isoformat()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .lt('expires_at', now)\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения истекших подписок: {e}")
+        return []
+
+def get_expiring_soon_subscriptions(days=3):
+    try:
+        now = datetime.now().isoformat()
+        future = (datetime.now() + timedelta(days=days)).isoformat()
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .gte('expires_at', now)\
+            .lte('expires_at', future)\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения подписок: {e}")
+        return []
+
+def get_all_active_subscriptions():
+    try:
+        response = supabase.table('subscriptions')\
+            .select('*')\
+            .eq('status', 'active')\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения подписок: {e}")
+        return []
+
+def get_subscription_stats():
+    try:
+        response = supabase.table('subscriptions')\
+            .select('*', count='exact')\
+            .eq('status', 'active')\
+            .execute()
+        total = response.count or 0
+        
+        tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
+        response2 = supabase.table('subscriptions')\
+            .select('*', count='exact')\
+            .eq('status', 'active')\
+            .lte('expires_at', tomorrow)\
+            .execute()
+        expiring_tomorrow = response2.count or 0
+        
+        return {"total": total, "expiring_tomorrow": expiring_tomorrow}
+    except Exception as e:
+        logging.error(f"Ошибка статистики: {e}")
+        return {"total": 0, "expiring_tomorrow": 0}
+
+def get_all_channels():
+    try:
+        response = supabase.table('tariff_channels')\
+            .select('*')\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения каналов: {e}")
+        return []
+
+def get_all_subscription_keys():
+    try:
+        response = supabase.table('subscription_keys')\
+            .select('*')\
+            .order('created_at', desc=True)\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"Ошибка получения ключей: {e}")
+        return []
 
 # ==================================================
-# ID КАНАЛОВ
-# ==================================================
-CHANNEL_IDS = {
-    "2": "-1004478645537",
-    "3": "-1004325704012",
-    "4": "-1004362010819",
-    "5": "-1004303957771",
-    "6": "-1004429510738",
-    "7": "-1003748125426",
-    "9": "-1004331987176",
-    "10": "-1001234567899",
-    "11": "-1003862973415",
-    "14": "-1004345678901",
-    "15": "-1004267025056",
-    "test": "-1003875225035",
-}
-
-# ==================================================
-# БАЗА ДАННЫХ (SQLite)
+# SQLite (для совместимости)
 # ==================================================
 DB_PATH = "users.db"
 
@@ -177,7 +424,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
-    logging.info("✅ База данных инициализирована")
+    logging.info("✅ SQLite база инициализирована")
 
 def add_paid_tariff(user_id: int, tariff_key: str):
     try:
@@ -283,6 +530,32 @@ def mark_invoice_paid(invoice_id: str):
         return False
 
 # ==================================================
+# КОНФИГУРАЦИЯ
+# ==================================================
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+PROJECT_NAME = "VIP"
+SUPPORT_CONTACT_RU = "https://t.me/kasgd"
+SUPPORT_CONTACT_EN = "https://t.me/kasgd"
+ADMIN_IDS = [8370080332, 8559381302, 8924977674]
+
+# CRYPTOBOT
+CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
+CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
+
+# КУРСЫ
+USDT_RATE = 80
+USD_RATE = 80
+GRAM_RATE = 1.34
+BTC_RATE = 65000
+
+# ==================================================
+# ID КАНАЛОВ
+# ==================================================
+CHANNEL_IDS = {
+    "test": "-1003875225035",
+}
+
+# ==================================================
 # ТЕКСТЫ
 # ==================================================
 LANG = {
@@ -297,11 +570,12 @@ LANG = {
         "enter_promo": "🏷️ <b>Введите код промокода</b>\n\nНапишите промокод в чат.",
         "promo_success": "✅ Промокод <b>{code}</b> активирован! Скидка {discount}% 🔥\n\n📋 <b>{name}</b>\n💰 Цена: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nВыберите валюту для оплаты.",
         "promo_fail": "❌ Промокод не найден. Попробуйте еще раз (или нажмите ◀️ Отмена).",
+        "promo_expired": "❌ Промокод истек. Попробуйте другой.",
         "choose_pay": "📋 <b>{name}</b>\nСрок доступа: {duration}\n💰 Цена: {price_text}\n\n🔒 Будет получен доступ к:\n• {project} (внешняя ссылка)\n\nВыберите способ оплаты",
-        "pay_card": "💳 <b>Оплата на карту</b>\n\nСпособ оплаты: Перевод на карту\n\n💰 К оплате: {final} RUB\n🆔 Ваш ID: {user_id}\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 2200190284092510\n\n🏧 Банк: Уралсиб\nПолучатель: Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку «Я оплатил»\n❕ Если вы ждете больше 12 часов, напишите администратору",
-        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@kasgd</a>\n\nкурс:\n1 ⭐ - 1 рубль",
+        "pay_card": "Способ оплаты: Перевод на карту\n\n💰 К оплате: {final} RUB\n🆔 Ваш ID: {user_id}\n\n📌 <b>Реквизиты для оплаты:</b>\n\n💳 2200190284092510\n\n🏧 Банк: Уралсиб\nПолучатель: Кирилл\n\n❗️ Проверка ботом может занимать какое-то время (ручная проверка)\n❕ Если вы оплатили, нажмите обязательно кнопку «Я оплатил»\n❕ Если вы ждете больше 12 часов, напишите администратору",
+        "pay_stars": "📋 <b>{name}</b>\nСрок доступа: {duration}\n{price_line}💳 Способ оплаты: ЗА ЗВЕЗДЫ ⭐\n\n💰 Итоговая стоимость: {final} STARS\n\nℹ️ <b>Информация по оплате</b>\nПодарить звезды или подарки на этот аккаунт - <a href=\"{support}\">@kasgd</a>\n\nкурс:\n1 ⭐ = 1 рубль",
         "pay_crypto_choose": "🪙 <b>Выберите монету:</b>",
-        "pay_crypto_invoice": "✅ <b>Счёт на оплату сформирован.</b>\n\nДоступы к закрытым сообществам будут открыты, как только вы оплатите его.\n\n📋 <b>{name}</b>\n💰 Сумма: <b>{amount} {asset}</b>\n\nНажмите кнопку ниже для оплаты:",
+        "pay_crypto_invoice": "✅ <b>Счёт на оплату сформирован.</b>\n\nДоступы к закрытым сообществам будут открыты, как только вы оплатите его.",
         "crypto_payment_success": "✅ <b>Оплата прошла успешно!</b>\n\nДля получения доступа пишите @kasgd\n❗️ Пишите сразу тариф, который брали, и чек оплаты",
         "refresh_link": "♻️ <i>Ссылка обновлена!</i>",
         "btn_prices": "💵 Тарифы",
@@ -323,11 +597,14 @@ LANG = {
         "btn_i_paid": "✅ Я ОПЛАТИЛ",
         "btn_to_prices": "✅ КУПИТЬ ПОДПИСКУ",
         "btn_cancel": "🚫 ОТМЕНА",
+        "btn_pay_for_friend": "🎁 ОПЛАТИТЬ ДЛЯ ДРУГА",
         "btn_stars_go": "⭐ Stars со скидкой до 42%",
         "btn_lang": "🇷🇺 Язык",
         "btn_write_user": "✍️ Написать лично",
         "btn_write_via_bot": "🤖 Написать через бота",
         "btn_back_to_admin": "◀️ Назад",
+        "btn_join": "🔗 ВСТУПИТЬ",
+        "btn_buy_other": "💳 КУПИТЬ ДРУГОЙ ДОСТУП",
         "payment_success": "✅ <b>Оплата прошла!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за покупку! ❤️\n\n📞 Поддержка: @kasgd",
         "payment_success_test": "✅ <b>Доступ открыт!</b>\n\n🔗 <b>Ваша ссылка доступа (действует 30 секунд):</b>\n{link}\n\n⚠️ <b>Внимание!</b> Ссылка действительна только 30 секунд!\n\nСпасибо за использование бота! ❤️\n\n📞 Поддержка: @kasgd",
         "subs_list_item": "• {name} (оплачен ✅)",
@@ -335,9 +612,18 @@ LANG = {
         "i_paid_confirm": "💁🏻‍♂️ Оплатили?\n\n👌🏻 Тогда отправьте сюда картинкой (не документом!) квитанцию платежа: скриншот или фото. Иначе бот не узнает что вы оплатили\n\n📌 На квитанции должны быть четко видны: дата, время и сумма платежа. Проверка может занимать до дня.\n🔒 Никто ваши чеки не увидит, Telegram не хранит их.\n\n⚠️ За спам вы можете быть заблокированы!",
         "payment_receipt_received": "✅ Ваш чек получен! Администратор проверит его в ближайшее время.",
         "new_payment_request": "🆕 <b>Новая заявка на оплату!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n💰 Сумма: {amount} RUB\n📝 Сообщение: {message_text}\n\n{media_info}",
-        "admin_panel": "⚙️ <b>Админ-панель</b>\n\n👥 Всего пользователей: {user_count}\n⏳ Ожидают проверки: {pending_count}\n\nВыберите действие:",
+        "admin_panel": "⚙️ <b>Админ-панель</b>\n\n👥 Всего пользователей: {user_count}\n📋 Активных подписок: {subscriptions_count}\n⏳ Истекают завтра: {expiring_tomorrow}\n\nВыберите действие:",
         "crypto_error": "❌ Ошибка создания счета. Проверьте API ключ или попробуйте позже.",
-        "crypto_direct": "🪙 <b>Прямой перевод</b>\n\nДля получения реквизитов либо по другому вопросу - @kasgd"
+        "crypto_direct": "🪙 <b>Прямой перевод</b>\n\nДля получения реквизитов либо по другому вопросу - @kasgd",
+        "subscription_activated": "✅ <b>Название тарифа на срок</b> активирован! Доступ уже появился в разделе \"⌛ Мои подписки\" в меню кнопок.",
+        "subscription_extended": "✅ <b>Подписка продлена!</b>\n\n📋 Тариф: {tariff_name}\n📅 Новый срок до: {expires_at}\n\nДоступ уже появился в разделе \"⌛ Мои подписки\".",
+        "subscription_expired": "⚠️ <b>Ваша подписка на \"{tariff_name}\" истекла!</b>\n\nДоступ к сообществу закрыт. Для продления доступа оплатите тариф заново.",
+        "subscription_expiring_soon": "⏰ <b>Напоминание!</b>\n\nВаша подписка на \"{tariff_name}\" истекает через {days} дня(ей).\nДля продления доступа оплатите тариф заново.",
+        "access_info": "✅ <b>Вход открыт.</b>\n\nНажмите на кнопку ВСТУПИТЬ, затем Подать заявку и снова ВСТУПИТЬ:",
+        "no_channel_configured": "❌ Для этого тарифа еще не настроена ссылка на канал. Обратитесь к администратору.",
+        "key_activated": "✅ <b>Ключ активирован!</b>\n\n📋 Тариф: {tariff_name}\n📅 Действует до: {expires_at}\n\nДоступ уже появился в разделе \"⌛ Мои подписки\".",
+        "key_not_found": "❌ Такого ключа не существует или он истек.",
+        "key_activated_admin": "🔑 <b>Активирован ключ!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n📅 Действует до: {expires_at}"
     },
     "en": {
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
@@ -350,11 +636,12 @@ LANG = {
         "enter_promo": "🏷️ <b>Enter promo code</b>\n\nType the promo code in the chat.",
         "promo_success": "✅ Promo code <b>{code}</b> activated! {discount}% discount 🔥\n\n📋 <b>{name}</b>\n💰 Price: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nChoose a currency for payment.",
         "promo_fail": "❌ Promo code not found. Try again (or press ◀️ Cancel).",
+        "promo_expired": "❌ Promo code expired. Try another one.",
         "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose payment method",
-        "pay_card": "💳 <b>Card payment</b>\n\nPayment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
-        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@kasgd</a>\n\nRate:\n1 ⭐ - 1 ruble",
+        "pay_card": "Payment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
+        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@kasgd</a>\n\nRate:\n1 ⭐ = 1 ruble",
         "pay_crypto_choose": "🪙 <b>Choose coin:</b>",
-        "pay_crypto_invoice": "✅ <b>Invoice created.</b>\n\nAccess to closed communities will be opened as soon as you pay it.\n\n📋 <b>{name}</b>\n💰 Amount: <b>{amount} {asset}</b>\n\nClick the button below to pay:",
+        "pay_crypto_invoice": "✅ <b>Invoice created.</b>\n\nAccess to closed communities will be opened as soon as you pay it.",
         "crypto_payment_success": "✅ <b>Payment successful!</b>\n\nFor access write @kasgd\n❗️ Write the tariff you purchased and payment receipt",
         "refresh_link": "♻️ <i>Link refreshed!</i>",
         "btn_prices": "💵 Prices",
@@ -376,11 +663,14 @@ LANG = {
         "btn_i_paid": "✅ I PAID",
         "btn_to_prices": "✅ BUY SUBSCRIPTION",
         "btn_cancel": "🚫 CANCEL",
+        "btn_pay_for_friend": "🎁 PAY FOR FRIEND",
         "btn_stars_go": "⭐ Stars up to 42% off",
         "btn_lang": "🇬🇧 Language",
         "btn_write_user": "✍️ Write personally",
         "btn_write_via_bot": "🤖 Write via bot",
         "btn_back_to_admin": "◀️ Back",
+        "btn_join": "🔗 JOIN",
+        "btn_buy_other": "💳 BUY OTHER ACCESS",
         "payment_success": "✅ <b>Payment successful!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for your purchase! ❤️\n\n📞 Support: @kasgd",
         "payment_success_test": "✅ <b>Access granted!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for using the bot! ❤️\n\n📞 Support: @kasgd",
         "subs_list_item": "• {name} (paid ✅)",
@@ -388,9 +678,18 @@ LANG = {
         "i_paid_confirm": "💁🏻‍♂️ Paid?\n\n👌🏻 Then send a payment receipt as an image (not document!): screenshot or photo. Otherwise the bot won't know you paid.\n\n📌 The receipt must clearly show: date, time and payment amount. Verification may take up to a day.\n🔒 No one will see your receipts, Telegram doesn't store them.\n\n⚠️ You may be blocked for spam!",
         "payment_receipt_received": "✅ Your receipt has been received! Administrator will check it shortly.",
         "new_payment_request": "🆕 <b>New payment request!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n💰 Amount: {amount} RUB\n📝 Message: {message_text}\n\n{media_info}",
-        "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n⏳ Pending: {pending_count}\n\nSelect action:",
+        "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n📋 Active subscriptions: {subscriptions_count}\n⏳ Expiring tomorrow: {expiring_tomorrow}\n\nSelect action:",
         "crypto_error": "❌ Error creating invoice. Check API key or try again later.",
-        "crypto_direct": "🪙 <b>Direct transfer</b>\n\nFor details or other questions - @kasgd"
+        "crypto_direct": "🪙 <b>Direct transfer</b>\n\nFor details or other questions - @kasgd",
+        "subscription_activated": "✅ <b>Tariff name for period</b> activated! Access already appeared in \"⌛ My subscriptions\".",
+        "subscription_extended": "✅ <b>Subscription extended!</b>\n\n📋 Tariff: {tariff_name}\n📅 New expiry: {expires_at}\n\nAccess already appeared in \"⌛ My subscriptions\".",
+        "subscription_expired": "⚠️ <b>Your subscription to \"{tariff_name}\" has expired!</b>\n\nAccess to the community is closed. Pay the tariff again to renew your access.",
+        "subscription_expiring_soon": "⏰ <b>Reminder!</b>\n\nYour subscription to \"{tariff_name}\" expires in {days} day(s).\nPay the tariff again to renew your access.",
+        "access_info": "✅ <b>Access open.</b>\n\nClick the JOIN button, then Submit request and JOIN again:",
+        "no_channel_configured": "❌ No channel link configured for this tariff yet. Contact administrator.",
+        "key_activated": "✅ <b>Key activated!</b>\n\n📋 Tariff: {tariff_name}\n📅 Valid until: {expires_at}\n\nAccess already appeared in \"⌛ My subscriptions\".",
+        "key_not_found": "❌ This key does not exist or has expired.",
+        "key_activated_admin": "🔑 <b>Key activated!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n📅 Valid until: {expires_at}"
     }
 }
 
@@ -402,9 +701,10 @@ TARIFFS = {
         "name_ru": "🖤 Сливы шкyp 🖤",
         "name_en": "🖤 Skin Leaks 🖤",
         "price_rub": 349,
-        "price_stars": 300,
+        "price_stars": 349,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "Вы получите доступ к следующим ресурсам:\n• H2 (канал)\n\n❗️ После покупки вы попадете в приватный канал со сливом девушек\n\n✅ Что в канале? П0pнo девок 13-19, а так-же слив и их разводом на фото, видео и \"беседы\" в скайпе, иногда ссылками на соц сети и Некоторых особых шкур есть номера и страницы вк\n\n❓Уровень? В основном 14-20, но встречаются и до 14 Вo3pacT\n\n✅ Помимо канала прилагается еще немного архивов с шкурками"
     },
@@ -412,9 +712,10 @@ TARIFFS = {
         "name_ru": "❕Mini Deтск. До 12 🌐-Хит",
         "name_en": "❕Mini Child. Up to 12 🌐-Hit",
         "price_rub": 499,
-        "price_stars": 450,
+        "price_stars": 499,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "Это мини пак с огромным количеством небольших видео\n\n❗️ После покyпки вы попадете в привaтный kaнал с de**ским пopno довольно таки жectkиm.\n\n✅ Уровень? i1-i12 вo3PacT, ceks, изnocuловаnие, инцceT, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб"
     },
@@ -422,9 +723,10 @@ TARIFFS = {
         "name_ru": "🔥💙ШкоDницЫ👧🏼🔥 (13-17 Jleт)",
         "name_en": "🔥💙Schoolgirls👧🏼🔥 (13-17 Years)",
         "price_rub": 799,
-        "price_stars": 700,
+        "price_stars": 799,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "❗️ После покупки вы попадете в приватный канал с цe**льным пpоцe**poм пopno\n\n✅ Большой сборник из мега подборки пopно ваших любимых шкoльниц возрастом от 12 до 17 🔥 , есть изnocuлование, инцceT, много сливов с впиcoк и просто cлив шkyp, скрытые камеры шkoльниц/стyдeнток и ceксoм, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб этой категории.\n\nКонтента очень много"
     },
@@ -432,9 +734,10 @@ TARIFFS = {
         "name_ru": "❗️Premium Deтск. До 12 ✅",
         "name_en": "❗️Premium Child. Up to 12 ✅",
         "price_rub": 899,
-        "price_stars": 800,
+        "price_stars": 899,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "❗️ После покyпки вы попадете в привaтный kaнал с de**ским пopno довольно таки жectkиm.\n\n✅ Уровень? i1-i12 вo3PacT, ceks, изnocuловаnие, инцceT, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб\n\nКонтента очень много"
     },
@@ -442,9 +745,10 @@ TARIFFS = {
         "name_ru": "Канал 3оo🐕",
         "name_en": "Zoo Channel🐕",
         "price_rub": 239,
-        "price_stars": 200,
+        "price_stars": 239,
         "duration_ru": "2 месяца",
         "duration_en": "2 months",
+        "duration_days": 60,
         "category": "main",
         "desc_ru": "Канал с зоо контентом"
     },
@@ -452,9 +756,10 @@ TARIFFS = {
         "name_ru": "Гeи",
         "name_en": "Gay",
         "price_rub": 299,
-        "price_stars": 250,
+        "price_stars": 299,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "Вы получите доступ к следующим ресурсам:\n• Gg (канал)\n\n❗️ После покупки вы попадете в приватный канал с м+м\n\n✅ Уровень? Есть до 12, но в основном видео 12-17, есть немного изnocuлование, инцceT, скрытые камеры шkoльнов/стyдeнтов и конечно основное же ceкс и минет\n\n✅ Помимо видео прилагается еще дополнительный архив."
     },
@@ -462,9 +767,10 @@ TARIFFS = {
         "name_ru": "🩵Всё включено 2026💚",
         "name_en": "🩵All inclusive 2026💚",
         "price_rub": 1499,
-        "price_stars": 1350,
+        "price_stars": 1499,
         "duration_ru": "Бессрочно",
         "duration_en": "Forever",
+        "duration_days": None,
         "category": "main",
         "desc_ru": "❗️Вы получите доступ сразу в 10 наших каналов при этом их подписка останется у вас НАВСЕГДА! А выйдет гораздо дешевле чем покупать по отдельности.\n\n🔥 Кoнтeнтa у вас выйдет очень МНОГО\n\n+ Бонусные каналы к тарифу"
     },
@@ -472,9 +778,10 @@ TARIFFS = {
         "name_ru": "Vpn 7 дней",
         "name_en": "Vpn 7 days",
         "price_rub": 10000,
-        "price_stars": 9000,
+        "price_stars": 10000,
         "duration_ru": "1 день",
         "duration_en": "1 day",
+        "duration_days": 1,
         "category": "main",
         "desc_ru": "Не покупать, читайте описание.\n\n✅ Хороший VPN для обхода белых списков.\n\nПереходим по ссылке:\nhttps://t.me/velvet_vpn_bot?start=sYzcRbjU\n\nВам дают 2 дня бесплатного доступа, а также вводим ещё 2 секретных промокода на 7 дней:\n\nWELCOME_BACK\nJUSTTRY"
     },
@@ -482,9 +789,10 @@ TARIFFS = {
         "name_ru": "✅Пак - Обновление ссылок",
         "name_en": "✅Pack - Link Update",
         "price_rub": 699,
-        "price_stars": 600,
+        "price_stars": 699,
         "duration_ru": "21 дней",
         "duration_en": "21 days",
+        "duration_days": 21,
         "category": "paki",
         "desc_ru": "Cливaeм ccлыky дpyгиx кaнaлoв, peкoмeндyeм пoкyпaть пocлe пpocмoтpa дpyгиx тapифoв\n\nЕдинственный пак который не входит во всё включено"
     },
@@ -492,9 +800,10 @@ TARIFFS = {
         "name_ru": "💯Жêçть (2-17 Jlet)🩸",
         "name_en": "💯Extreme (2-17 Years)🩸",
         "price_rub": 599,
-        "price_stars": 550,
+        "price_stars": 599,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "paki",
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Жecть (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмым жecтkим koнтeнтoм, чтo ecть в интepнeтe.\n\n❓Уpoвeнь? 14-20 лeт, кpoвь, yнижeния, бoль, экcтpим, мясo, гpyппoвyшkи, инцecT — вce caмoe жecтkoe."
     },
@@ -502,9 +811,10 @@ TARIFFS = {
         "name_ru": "💫рabыни + слivы + kpyжки✨",
         "name_en": "💫Slaves + Leaks + Mugs✨",
         "price_rub": 250,
-        "price_stars": 225,
+        "price_stars": 250,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
+        "duration_days": 30,
         "category": "main",
         "desc_ru": "Описание будет позже"
     }
@@ -551,6 +861,16 @@ class PaymentStates(StatesGroup):
 class AdminReplyStates(StatesGroup):
     waiting_for_reply = State()
 
+class AdminStates(StatesGroup):
+    waiting_for_tariff_key = State()
+    waiting_for_channel_id = State()
+    waiting_for_invite_link = State()
+    waiting_for_key_tariff = State()
+    waiting_for_key_duration = State()
+    waiting_for_promo_code = State()
+    waiting_for_promo_discount = State()
+    waiting_for_promo_minutes = State()
+
 # --- ФУНКЦИИ ---
 async def create_one_time_link(chat_id: str) -> str:
     try:
@@ -584,6 +904,12 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
     
     add_paid_tariff(user_id, tariff_key)
     
+    tariff = TARIFFS.get(tariff_key)
+    if tariff and tariff.get('duration_days') is not None:
+        extend_subscription(user_id, tariff_key, tariff['duration_days'])
+    else:
+        add_subscription(user_id, tariff_key, None)
+    
     if tariff_key == "test":
         text = LANG[lang]["payment_success_test"].format(link=link)
     else:
@@ -591,8 +917,7 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
     
     await message.answer(text, disable_web_page_preview=False)
 
-async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
-    """Создает счет в CryptoBot и возвращает данные"""
+async def create_crypto_invoice_usd(amount_usd: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
     if not CRYPTOBOT_API_KEY:
         logging.error("CRYPTOBOT_API_KEY не задан!")
         return None
@@ -604,10 +929,10 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
     }
     payload = {
         "asset": asset,
-        "amount": str(amount),
+        "amount": str(amount_usd),
         "description": f"Оплата тарифа {tariff_key} для пользователя {user_id}",
         "paid_btn_name": "openChannel",
-        "paid_btn_url": "https://t.me/YourMainBot",
+        "paid_btn_url": "https://t.me/kasgd",
         "payload": f"{user_id}_{tariff_key}"
     }
     
@@ -638,13 +963,54 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
         return None
 
 def round_to_half(value: float) -> float:
-    """Округляет до ближайшего 0.5"""
     return round(value * 2) / 2
+
+def get_tariff_name(tariff_key: str, lang: str = "ru"):
+    tariff = TARIFFS.get(tariff_key)
+    if tariff:
+        return tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    return tariff_key
+
+def format_date(date):
+    if date is None:
+        return "Бессрочно"
+    if isinstance(date, str):
+        date = datetime.fromisoformat(date)
+    return date.strftime("%d.%m.%Y")
+
+async def choose_payment_logic(callback: CallbackQuery, state: FSMContext, tariff_key: str):
+    tariff = TARIFFS[tariff_key]
+    
+    if tariff['price_rub'] == 0:
+        lang = await get_lang(state)
+        user_id = callback.from_user.id
+        await callback.message.delete()
+        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
+        await callback.answer("✅ Доступ открыт!")
+        return
+    
+    lang = await get_lang(state)
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
+    else:
+        show_rub = tariff['price_rub']
+        price_text = f"{show_rub} RUB"
+    
+    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
+    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
 # --- КЛАВИАТУРЫ ---
 def get_main_keyboard(lang):
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=LANG[lang]["btn_prices"]), KeyboardButton(text=LANG[lang]["btn_subs"])]
+        [KeyboardButton(text=LANG[lang]["btn_prices"]), 
+         KeyboardButton(text=LANG[lang]["btn_subs"])]
     ], resize_keyboard=True)
 
 def get_tariff_keyboard(lang):
@@ -676,10 +1042,11 @@ def get_tariff_details_keyboard(tariff_key, lang, user_id):
     buttons = []
     buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_promo"], callback_data=f"enter_promo_{tariff_key}")])
     
-    is_paid = is_tariff_paid(user_id, tariff_key)
+    sub = get_subscription_by_tariff(user_id, tariff_key)
     
-    if not is_paid:
+    if not sub:
         buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay"], callback_data=f"choose_pay_{tariff_key}")])
+        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_pay_for_friend"], callback_data=f"pay_for_friend_{tariff_key}")])
     
     buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
     
@@ -706,15 +1073,18 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
 
 def get_crypto_currency_keyboard(tariff_key, discount_percent=0, lang="ru"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_crypto_direct"], callback_data=f"crypto_direct_{tariff_key}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
 def get_admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Управление тарифами", callback_data="admin_channels")],
+        [InlineKeyboardButton(text="🔑 Создать ключ", callback_data="admin_create_key")],
+        [InlineKeyboardButton(text="🏷️ Управление промокодами", callback_data="admin_promocodes")],
         [InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_mailing")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton(text="📋 Заявки на оплату", callback_data="admin_payment_requests")]
@@ -728,6 +1098,57 @@ def get_payment_request_keyboard(request_id, lang="ru"):
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")]
     ])
 
+def get_subscription_keyboard(subscriptions, lang="ru"):
+    buttons = []
+    for sub in subscriptions:
+        tariff_key = sub['tariff_key']
+        name = get_tariff_name(tariff_key, lang)
+        buttons.append([InlineKeyboardButton(text=name, callback_data=f"access_{tariff_key}")])
+    buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_access_keyboard(tariff_key, lang="ru"):
+    tariff_channel = get_tariff_channel(tariff_key)
+    invite_link = tariff_channel['invite_link'] if tariff_channel else None
+    
+    buttons = []
+    if invite_link:
+        buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_join"], url=invite_link)])
+    buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_buy_other"], callback_data="back_to_prices")])
+    buttons.append([InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_subs")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# ==================================================
+# ОБРАБОТЧИК ЗАЯВОК В КАНАЛ
+# ==================================================
+
+@dp.chat_join_request()
+async def handle_join_request(update: ChatJoinRequest):
+    user_id = update.from_user.id
+    chat_id = update.chat.id
+    
+    logging.info(f"📥 Заявка от {user_id} в канал {chat_id}")
+    
+    try:
+        response = supabase.table('tariff_channels')\
+            .select('tariff_key')\
+            .eq('channel_id', str(chat_id))\
+            .execute()
+        
+        if response.data:
+            tariff_key = response.data[0]['tariff_key']
+            sub = get_subscription_by_tariff(user_id, tariff_key)
+            if sub:
+                await update.approve()
+                logging.info(f"✅ Заявка от {user_id} одобрена для {tariff_key}")
+                return
+            else:
+                logging.info(f"❌ Отказ для {user_id} - нет подписки на {tariff_key}")
+        else:
+            logging.info(f"⚠️ Канал {chat_id} не найден в настройках")
+    except Exception as e:
+        logging.error(f"Ошибка обработки заявки: {e}")
+
 # ==================================================
 # ХЭНДЛЕРЫ
 # ==================================================
@@ -738,7 +1159,17 @@ async def cmd_start(message: Message, state: FSMContext):
     first_name = message.from_user.first_name or "Пользователь"
     username = message.from_user.username
     
+    logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
+    
     add_user(user_id, first_name, username)
+    
+    if message.text and " " in message.text:
+        parts = message.text.split()
+        if len(parts) > 1 and parts[0] == "/start":
+            key_param = parts[1]
+            if key_param.startswith("key_"):
+                await process_key_activation(message, key_param, state)
+                return
     
     lang = await get_lang(state)
     
@@ -754,25 +1185,490 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(welcome_text, disable_web_page_preview=True)
     
     menu_text = LANG[lang]["main_menu_text"]
-    await message.answer(menu_text, reply_markup=get_tariff_keyboard(lang))
+    await message.answer(
+        menu_text,
+        reply_markup=get_main_keyboard(lang)
+    )
+    
+    await message.answer(
+        LANG[lang]["prices_menu"],
+        reply_markup=get_tariff_keyboard(lang)
+    )
+
+async def process_key_activation(message: Message, key_param: str, state: FSMContext):
+    user_id = message.from_user.id
+    username = message.from_user.username or "без username"
+    lang = await get_lang(state)
+    
+    key_data = get_subscription_key(key_param)
+    
+    if not key_data:
+        await message.answer(LANG[lang]["key_not_found"])
+        return
+    
+    tariff_key = key_data['tariff_key']
+    duration_days = key_data['duration_days']
+    
+    tariff = TARIFFS.get(tariff_key)
+    tariff_name = get_tariff_name(tariff_key, lang)
+    
+    existing_sub = get_subscription_by_tariff(user_id, tariff_key)
+    
+    if existing_sub:
+        if duration_days is not None:
+            extend_subscription(user_id, tariff_key, duration_days)
+            expires_at = datetime.now() + timedelta(days=duration_days)
+        else:
+            expires_at = None
+    else:
+        add_subscription(user_id, tariff_key, duration_days)
+        sub = get_subscription_by_tariff(user_id, tariff_key)
+        expires_at = sub['expires_at'] if sub else None
+    
+    delete_subscription_key(key_param)
+    
+    text = LANG[lang]["key_activated"].format(
+        tariff_name=tariff_name,
+        expires_at=format_date(expires_at)
+    )
+    await message.answer(text)
+    
+    user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
+    admin_text = LANG[lang]["key_activated_admin"].format(
+        user_link=user_link,
+        user_id=user_id,
+        tariff_name=tariff_name,
+        expires_at=format_date(expires_at)
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, admin_text)
+        except Exception as e:
+            logging.error(f"Ошибка отправки уведомления админу: {e}")
 
 @dp.message(Command("admin"))
-async def cmd_admin(message: Message):
+async def cmd_admin(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Только для админов!")
         return
     
     user_count = get_user_count()
+    stats = get_subscription_stats()
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM payment_requests WHERE status = "pending"')
-    pending_count = cursor.fetchone()[0] or 0
-    conn.close()
-    
-    text = LANG["ru"]["admin_panel"].format(user_count=user_count, pending_count=pending_count)
+    text = LANG["ru"]["admin_panel"].format(
+        user_count=user_count,
+        subscriptions_count=stats['total'],
+        expiring_tomorrow=stats['expiring_tomorrow']
+    )
     
     await message.answer(text, reply_markup=get_admin_keyboard())
+
+# ==================================================
+# АДМИН: УПРАВЛЕНИЕ ТАРИФАМИ
+# ==================================================
+
+@dp.callback_query(F.data == "admin_channels")
+async def admin_channels(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    text = "📋 <b>Управление ссылками каналов</b>\n\n"
+    text += "Для каждого тарифа можно настроить ссылку на канал с заявками.\n\n"
+    
+    for key, tariff in TARIFFS.items():
+        channel = get_tariff_channel(key)
+        if channel and channel.get('invite_link'):
+            status = "✅ настроен"
+            link_preview = channel['invite_link'][:30] + "..." if len(channel['invite_link']) > 30 else channel['invite_link']
+            text += f"• {tariff['name_ru']}: {status}\n  🔗 {link_preview}\n\n"
+        else:
+            text += f"• {tariff['name_ru']}: ❌ не настроен\n\n"
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ Настроить тариф", callback_data="admin_edit_channel")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")]
+        ])
+    )
+
+@dp.callback_query(F.data == "admin_edit_channel")
+async def admin_edit_channel(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    buttons = []
+    for key, tariff in TARIFFS.items():
+        channel = get_tariff_channel(key)
+        status = "✅" if channel and channel.get('invite_link') else "❌"
+        buttons.append([InlineKeyboardButton(
+            text=f"{status} {tariff['name_ru']}", 
+            callback_data=f"admin_channel_{key}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="admin_channels")])
+    
+    await callback.message.edit_text(
+        "📋 <b>Выберите тариф для настройки:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.callback_query(F.data.startswith("admin_channel_"))
+async def admin_channel_set(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("admin_channel_", "")
+    tariff = TARIFFS[tariff_key]
+    channel = get_tariff_channel(tariff_key)
+    
+    await state.update_data(admin_tariff_key=tariff_key)
+    
+    text = f"📋 <b>Настройка: {tariff['name_ru']}</b>\n\n"
+    
+    if channel and channel.get('channel_id'):
+        text += f"🆔 ID канала: <code>{channel['channel_id']}</code>\n"
+    else:
+        text += "🆔 ID канала: ❌ не задан\n"
+    
+    if channel and channel.get('invite_link'):
+        text += f"🔗 Ссылка-приглашение: {channel['invite_link']}\n"
+    else:
+        text += "🔗 Ссылка-приглашение: ❌ не задана\n"
+    
+    text += "\nВведите ID канала (например -1001234567890):"
+    
+    await callback.message.edit_text(text)
+    await state.set_state(AdminStates.waiting_for_channel_id)
+
+@dp.message(AdminStates.waiting_for_channel_id)
+async def admin_set_channel_id(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    tariff_key = data.get("admin_tariff_key")
+    channel_id = message.text.strip()
+    
+    await state.update_data(admin_channel_id=channel_id)
+    
+    await message.answer(
+        "📋 Теперь введите ссылку-приглашение на канал (с заявками):\n\n"
+        "Пример: https://t.me/joinchat/XXXXX"
+    )
+    await state.set_state(AdminStates.waiting_for_invite_link)
+
+@dp.message(AdminStates.waiting_for_invite_link)
+async def admin_set_invite_link(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    tariff_key = data.get("admin_tariff_key")
+    channel_id = data.get("admin_channel_id")
+    invite_link = message.text.strip()
+    
+    set_tariff_channel(tariff_key, channel_id, invite_link)
+    
+    tariff = TARIFFS[tariff_key]
+    
+    await message.answer(
+        f"✅ Настройки для тарифа <b>{tariff['name_ru']}</b> сохранены!\n\n"
+        f"🆔 ID канала: <code>{channel_id}</code>\n"
+        f"🔗 Ссылка: {invite_link}\n\n"
+        f"Пользователи с активной подпиской теперь увидят эту ссылку в разделе 'Мои подписки'."
+    )
+    await state.clear()
+
+# ==================================================
+# АДМИН: СОЗДАНИЕ КЛЮЧЕЙ
+# ==================================================
+
+@dp.callback_query(F.data == "admin_create_key")
+async def admin_create_key(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    buttons = []
+    for key, tariff in TARIFFS.items():
+        buttons.append([InlineKeyboardButton(
+            text=f"{tariff['name_ru']} ({tariff['duration_ru']})", 
+            callback_data=f"admin_key_tariff_{key}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")])
+    
+    await callback.message.edit_text(
+        "🔑 <b>Создание одноразового ключа</b>\n\n"
+        "Выберите тариф для ключа:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.callback_query(F.data.startswith("admin_key_tariff_"))
+async def admin_key_tariff(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("admin_key_tariff_", "")
+    tariff = TARIFFS[tariff_key]
+    
+    await state.update_data(admin_key_tariff=tariff_key)
+    
+    duration_options = [
+        ("30 дней", 30),
+        ("60 дней", 60),
+        ("90 дней", 90),
+        ("Бессрочно", None)
+    ]
+    
+    buttons = []
+    for label, days in duration_options:
+        buttons.append([InlineKeyboardButton(
+            text=label, 
+            callback_data=f"admin_key_days_{days if days is not None else '0'}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="admin_create_key")])
+    
+    await callback.message.edit_text(
+        f"📋 <b>Тариф: {tariff['name_ru']}</b>\n\n"
+        "Выберите срок действия подписки:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.callback_query(F.data.startswith("admin_key_days_"))
+async def admin_key_days(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    days_str = callback.data.replace("admin_key_days_", "")
+    duration_days = None if days_str == "0" else int(days_str)
+    
+    data = await state.get_data()
+    tariff_key = data.get("admin_key_tariff")
+    
+    key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
+    
+    if key:
+        tariff = TARIFFS[tariff_key]
+        link = f"https://t.me/{bot.username}?start={key}"
+        
+        text = f"✅ <b>Ключ создан!</b>\n\n"
+        text += f"📋 Тариф: {tariff['name_ru']}\n"
+        text += f"📅 Срок: {'Бессрочно' if duration_days is None else f'{duration_days} дней'}\n"
+        text += f"🔑 Ключ: <code>{key}</code>\n"
+        text += f"🔗 Ссылка: {link}\n\n"
+        text += "⚠️ Ключ одноразовый. После активации будет удален."
+        
+        await callback.message.edit_text(text)
+    else:
+        await callback.message.edit_text("❌ Ошибка создания ключа. Попробуйте позже.")
+    
+    await state.clear()
+
+# ==================================================
+# АДМИН: УПРАВЛЕНИЕ ПРОМОКОДАМИ
+# ==================================================
+
+@dp.callback_query(F.data == "admin_promocodes")
+async def admin_promocodes(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    promocodes = get_all_promo_codes()
+    
+    text = "🏷️ <b>Управление промокодами</b>\n\n"
+    
+    if promocodes:
+        for pc in promocodes:
+            code = pc['code']
+            discount = pc['discount_percent']
+            expires = pc.get('expires_at')
+            status = "✅ активен" if (expires is None or datetime.fromisoformat(expires) > datetime.now()) else "❌ истек"
+            text += f"• <b>{code}</b> - {discount}% ({status})\n"
+            if expires:
+                text += f"  До: {datetime.fromisoformat(expires).strftime('%d.%m.%Y %H:%M')}\n"
+            text += "\n"
+    else:
+        text += "❌ Нет созданных промокодов\n\n"
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать промокод", callback_data="admin_create_promo")],
+            [InlineKeyboardButton(text="🗑️ Удалить промокод", callback_data="admin_delete_promo")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_admin")]
+        ])
+    )
+
+@dp.callback_query(F.data == "admin_create_promo")
+async def admin_create_promo(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Создание промокода</b>\n\n"
+        "Введите название промокода (только буквы и цифры, без пробелов):\n\n"
+        "Пример: BLACKFRIDAY"
+    )
+    await state.set_state(AdminStates.waiting_for_promo_code)
+
+@dp.message(AdminStates.waiting_for_promo_code)
+async def admin_promo_code(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    code = message.text.strip().upper()
+    if not code or " " in code:
+        await message.answer("❌ Название не должно содержать пробелов. Попробуйте еще раз.")
+        return
+    
+    await state.update_data(admin_promo_code=code)
+    
+    await message.answer(
+        "🏷️ <b>Создание промокода</b>\n\n"
+        "Введите процент скидки (число от 1 до 100):\n\n"
+        "Пример: 25"
+    )
+    await state.set_state(AdminStates.waiting_for_promo_discount)
+
+@dp.message(AdminStates.waiting_for_promo_discount)
+async def admin_promo_discount(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    try:
+        discount = int(message.text.strip())
+        if discount < 1 or discount > 100:
+            await message.answer("❌ Скидка должна быть от 1 до 100. Попробуйте еще раз.")
+            return
+    except:
+        await message.answer("❌ Введите число. Попробуйте еще раз.")
+        return
+    
+    await state.update_data(admin_promo_discount=discount)
+    
+    await message.answer(
+        "🏷️ <b>Создание промокода</b>\n\n"
+        "Введите срок действия в минутах:\n\n"
+        "Пример: 1440 (1 день), 43200 (30 дней)\n"
+        "Или 0 для бессрочного"
+    )
+    await state.set_state(AdminStates.waiting_for_promo_minutes)
+
+@dp.message(AdminStates.waiting_for_promo_minutes)
+async def admin_promo_minutes(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    try:
+        minutes = int(message.text.strip())
+        if minutes < 0:
+            await message.answer("❌ Введите положительное число или 0.")
+            return
+        expires_minutes = None if minutes == 0 else minutes
+    except:
+        await message.answer("❌ Введите число. Попробуйте еще раз.")
+        return
+    
+    data = await state.get_data()
+    code = data.get("admin_promo_code")
+    discount = data.get("admin_promo_discount")
+    
+    create_promo_code(code, discount, expires_minutes, message.from_user.id)
+    
+    expires_text = "Бессрочно" if expires_minutes is None else f"{expires_minutes} минут"
+    
+    await message.answer(
+        f"✅ <b>Промокод создан!</b>\n\n"
+        f"🏷️ Код: <b>{code}</b>\n"
+        f"📉 Скидка: {discount}%\n"
+        f"⏰ Срок: {expires_text}\n\n"
+        f"Пользователи могут использовать его при оформлении заказа."
+    )
+    await state.clear()
+
+@dp.callback_query(F.data == "admin_delete_promo")
+async def admin_delete_promo(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    promocodes = get_all_promo_codes()
+    
+    if not promocodes:
+        await callback.message.edit_text(
+            "❌ Нет созданных промокодов для удаления.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="admin_promocodes")]
+            ])
+        )
+        return
+    
+    buttons = []
+    for pc in promocodes:
+        code = pc['code']
+        buttons.append([InlineKeyboardButton(
+            text=f"🗑️ {code} ({pc['discount_percent']}%)", 
+            callback_data=f"admin_del_promo_{code}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="admin_promocodes")])
+    
+    await callback.message.edit_text(
+        "🏷️ <b>Удаление промокода</b>\n\n"
+        "Выберите промокод для удаления:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.callback_query(F.data.startswith("admin_del_promo_"))
+async def admin_del_promo(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    code = callback.data.replace("admin_del_promo_", "")
+    delete_promo_code(code)
+    
+    await callback.message.edit_text(
+        f"✅ Промокод <b>{code}</b> удален.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="admin_promocodes")]
+        ])
+    )
+
+# ==================================================
+# АДМИН: РАССЫЛКА
+# ==================================================
 
 @dp.callback_query(F.data == "admin_mailing")
 async def admin_mailing_start(callback: CallbackQuery, state: FSMContext):
@@ -790,50 +1686,6 @@ async def admin_mailing_start(callback: CallbackQuery, state: FSMContext):
         "🔄 Чтобы отменить, отправь /cancel"
     )
     await state.set_state(MailingStates.waiting_for_content)
-
-@dp.message(Command("mail"))
-async def cmd_mail(message: Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Только для админов!")
-        return
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏷️ Скидка 25%", callback_data="mail_promo25")],
-        [InlineKeyboardButton(text="🏷️ Скидка 40%", callback_data="mail_promo40")],
-        [InlineKeyboardButton(text="🏷️ Скидка 60%", callback_data="mail_promo60")],
-        [InlineKeyboardButton(text="📨 Обычная рассылка", callback_data="mail_normal")]
-    ])
-    
-    await message.answer(
-        "📨 <b>Выбери тип рассылки:</b>\n\n"
-        "• Скидка 25% — пользователь получит скидку 25%\n"
-        "• Скидка 40% — пользователь получит скидку 40%\n"
-        "• Скидка 60% — пользователь получит скидку 60%\n"
-        "• Обычная — просто текст",
-        reply_markup=keyboard
-    )
-    await state.set_state(MailingStates.waiting_for_mail_type)
-
-@dp.callback_query(MailingStates.waiting_for_mail_type)
-async def process_mail_type(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Только для админов!", show_alert=True)
-        return
-    
-    mail_type = callback.data.replace("mail_", "")
-    await state.update_data(mail_type=mail_type)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        "📝 <b>Отправь текст сообщения</b>\n\n"
-        "Этот текст увидят все пользователи. Ты можешь отправить:\n"
-        "• Текст\n"
-        "• Фото\n"
-        "• Видео\n"
-        "• GIF\n\n"
-        "🔄 Чтобы отменить, отправь /cancel"
-    )
-    await state.set_state(MailingStates.waiting_for_content)
     await callback.answer()
 
 @dp.message(MailingStates.waiting_for_content)
@@ -841,9 +1693,6 @@ async def process_mailing_content(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Только для админов!")
         return
-    
-    data = await state.get_data()
-    mail_type = data.get("mail_type", "normal")
     
     await message.answer("⏳ Начинаю рассылку...")
     
@@ -854,41 +1703,21 @@ async def process_mailing_content(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    if mail_type == "promo25":
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_25")]
-        ])
-        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 25% на любой тариф!"
-    elif mail_type == "promo40":
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_40")]
-        ])
-        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 40% на любой тариф!"
-    elif mail_type == "promo60":
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏷️ АКТИВИРОВАТЬ СКИДКУ", callback_data="mail_discount_60")]
-        ])
-        footer = "\n\n🔥 Нажми кнопку, чтобы активировать скидку 60% на любой тариф!"
-    else:
-        keyboard = None
-        footer = ""
-    
     success = 0
     failed = 0
     
     for user_id in users:
         try:
             if message.text:
-                text = message.text + footer
-                await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=keyboard)
+                await bot.send_message(user_id, message.text, parse_mode="HTML")
             elif message.photo:
-                await bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption + footer, reply_markup=keyboard)
+                await bot.send_photo(user_id, message.photo[-1].file_id, caption=message.caption)
             elif message.video:
-                await bot.send_video(user_id, message.video.file_id, caption=message.caption + footer, reply_markup=keyboard)
+                await bot.send_video(user_id, message.video.file_id, caption=message.caption)
             elif message.animation:
-                await bot.send_animation(user_id, message.animation.file_id, caption=message.caption + footer, reply_markup=keyboard)
+                await bot.send_animation(user_id, message.animation.file_id, caption=message.caption)
             elif message.document:
-                await bot.send_document(user_id, message.document.file_id, caption=message.caption + footer, reply_markup=keyboard)
+                await bot.send_document(user_id, message.document.file_id, caption=message.caption)
             else:
                 await message.answer("❌ Неподдерживаемый тип сообщения!")
                 await state.clear()
@@ -903,51 +1732,13 @@ async def process_mailing_content(message: Message, state: FSMContext):
         f"✅ <b>Рассылка завершена!</b>\n\n"
         f"📤 Отправлено: {success}\n"
         f"❌ Не доставлено: {failed}\n"
-        f"👥 Всего пользователей: {len(users)}\n"
-        f"📌 Тип: {mail_type}"
+        f"👥 Всего пользователей: {len(users)}"
     )
     await state.clear()
 
-@dp.message(Command("cancel"))
-async def cancel_command(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("✅ Отменено.")
-
-@dp.callback_query(F.data == "mail_discount_25")
-async def mail_discount_25(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    add_user_discount(user_id, "SUPER25", 25)
-    
-    await callback.message.edit_text(
-        "🏷️ <b>Скидка 25% активирована!</b>\n\n"
-        "Ты получил скидку 25% на любой тариф 🎉\n\n"
-        "Скидка будет применена автоматически при покупке."
-    )
-    await callback.answer("✅ Скидка 25% активирована!", show_alert=True)
-
-@dp.callback_query(F.data == "mail_discount_40")
-async def mail_discount_40(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    add_user_discount(user_id, "HOMAKE40", 40)
-    
-    await callback.message.edit_text(
-        "🏷️ <b>Скидка 40% активирована!</b>\n\n"
-        "Ты получил скидку 40% на любой тариф 🎉\n\n"
-        "Скидка будет применена автоматически при покупке."
-    )
-    await callback.answer("✅ Скидка 40% активирована!", show_alert=True)
-
-@dp.callback_query(F.data == "mail_discount_60")
-async def mail_discount_60(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    add_user_discount(user_id, "newpopolnenie", 60)
-    
-    await callback.message.edit_text(
-        "🏷️ <b>Скидка 60% активирована!</b>\n\n"
-        "Ты получил скидку 60% на любой тариф 🎉\n\n"
-        "Скидка будет применена автоматически при покупке."
-    )
-    await callback.answer("✅ Скидка 60% активирована!", show_alert=True)
+# ==================================================
+# АДМИН: СТАТИСТИКА
+# ==================================================
 
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: CallbackQuery):
@@ -955,114 +1746,69 @@ async def admin_stats(callback: CallbackQuery):
         await callback.answer("❌ Только для админов!", show_alert=True)
         return
     
-    user_count = get_user_count()
-    
-    await callback.message.edit_text(
-        f"📊 <b>Статистика бота</b>\n\n"
-        f"👥 Всего пользователей: {user_count}",
-        reply_markup=get_admin_keyboard()
-    )
     await callback.answer()
-
-@dp.message(Command("test67"))
-async def cmd_test67(message: Message, state: FSMContext):
-    lang = await get_lang(state)
-    user_id = message.from_user.id
     
-    is_paid = is_tariff_paid(user_id, "test")
+    user_count = get_user_count()
+    stats = get_subscription_stats()
     
-    if is_paid:
-        text = f"""📋 <b>{TEST_TARIFF['name_ru'] if lang == 'ru' else TEST_TARIFF['name_en']}</b>
+    keys = get_all_subscription_keys()
+    keys_count = len(keys)
+    
+    promos = get_all_promo_codes()
+    promo_count = len(promos)
+    
+    text = f"""📊 <b>Статистика бота</b>
 
-💰 Цена: БЕСПЛАТНО 🎉
-Срок доступа: {TEST_TARIFF['duration_ru'] if lang == 'ru' else TEST_TARIFF['duration_en']}
+👥 Всего пользователей: {user_count}
+📋 Активных подписок: {stats['total']}
+⏳ Истекают завтра: {stats['expiring_tomorrow']}
+🔑 Создано ключей: {keys_count}
+🏷️ Активных промокодов: {promo_count}
 
-{TEST_TARIFF['desc_ru'] if lang == 'ru' else TEST_TARIFF['desc_en']}
+📌 <b>Статус бота:</b>
+✅ Supabase REST API подключена
+✅ SQLite работает
+✅ CryptoBot {'✅' if CRYPTOBOT_API_KEY else '❌'}"""
 
-✅ <b>ТАРИФ ОПЛАЧЕН</b>
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
 
-🔑 Для получения ссылки напишите в поддержку @kasgd"""
-        await message.answer(text)
+# ==================================================
+# ОБРАБОТЧИКИ ОПЛАТ
+# ==================================================
+
+@dp.callback_query(F.data == "back_to_admin")
+async def back_to_admin(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
         return
     
-    text = f"""📋 <b>{TEST_TARIFF['name_ru'] if lang == 'ru' else TEST_TARIFF['name_en']}</b>
-
-💰 Цена: БЕСПЛАТНО 🎉
-Срок доступа: {TEST_TARIFF['duration_ru'] if lang == 'ru' else TEST_TARIFF['duration_en']}
-
-{TEST_TARIFF['desc_ru'] if lang == 'ru' else TEST_TARIFF['desc_en']}"""
+    await callback.answer()
     
-    await message.answer(text, reply_markup=get_test_tariff_keyboard(lang))
+    user_count = get_user_count()
+    stats = get_subscription_stats()
+    
+    text = LANG["ru"]["admin_panel"].format(
+        user_count=user_count,
+        subscriptions_count=stats['total'],
+        expiring_tomorrow=stats['expiring_tomorrow']
+    )
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
 
-@dp.callback_query(F.data == "pay_test")
-async def pay_test_tariff(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data == "back_to_subs")
+async def back_to_subs(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     lang = await get_lang(state)
     user_id = callback.from_user.id
     
-    if is_tariff_paid(user_id, "test"):
-        await callback.answer("❌ Вы уже активировали тестовый тариф!", show_alert=True)
-        return
+    subscriptions = get_active_subscriptions(user_id)
     
-    await callback.message.delete()
-    await save_payment_and_send_link(callback.message, "test", lang, user_id)
-    await callback.answer("✅ Доступ открыт!")
-
-@dp.message(Command("reset"))
-async def cmd_reset(message: Message):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ У вас нет прав для этой команды!")
-        return
-    await message.answer("🔄 Выполняю сброс...")
-    await message.answer("✅ Бот сброшен!")
-
-@dp.message(Command("language"))
-async def cmd_language(message: Message, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="set_lang_ru")],
-        [InlineKeyboardButton(text="🇬🇧 English", callback_data="set_lang_en")]
-    ])
-    await message.answer("🌍 Выберите язык:", reply_markup=kb)
-
-@dp.callback_query(F.data.startswith("set_lang_"))
-async def process_lang_change(callback: CallbackQuery, state: FSMContext):
-    lang = callback.data.replace("set_lang_", "")
-    await state.update_data(lang=lang)
-    await callback.answer()
-    await callback.message.delete()
-    await callback.message.answer(f"✅ Язык установлен на {'Русский' if lang == 'ru' else 'English'}! Нажмите /start")
-
-@dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
-async def show_prices(message: Message, state: FSMContext):
-    lang = await get_lang(state)
-    await message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
-
-@dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
-async def show_subscriptions(message: Message, state: FSMContext):
-    lang = await get_lang(state)
-    user_id = message.from_user.id
-    
-    paid_list = get_paid_tariffs(user_id)
-    
-    if paid_list:
-        subs_list = []
-        for tariff_key in paid_list:
-            if tariff_key == "test":
-                name = TEST_TARIFF['name_ru'] if lang == "ru" else TEST_TARIFF['name_en']
-                subs_list.append(LANG[lang]["subs_list_item"].format(name=name))
-            elif tariff_key in TARIFFS:
-                name = TARIFFS[tariff_key]['name_ru'] if lang == "ru" else TARIFFS[tariff_key]['name_en']
-                subs_list.append(LANG[lang]["subs_list_item"].format(name=name))
-        
-        if subs_list:
-            text = LANG[lang]["subs_menu"].format(list="\n".join(subs_list))
-            await message.answer(text)
-            return
-    
-    await message.answer(LANG[lang]["no_subs"])
-
-# ==================================================
-# ОБРАБОТЧИКИ ТАРИФОВ И ОПЛАТЫ
-# ==================================================
+    if subscriptions:
+        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
+        await callback.message.edit_text(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+    else:
+        await callback.message.edit_text(LANG[lang]["no_subs"])
+        await callback.message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.callback_query(F.data == "back_to_prices")
 async def back_to_prices(callback: CallbackQuery, state: FSMContext):
@@ -1104,7 +1850,7 @@ async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
     else:
         price_text = f"{tariff['price_rub']} 🇷🇺RUB"
     
-    is_paid = is_tariff_paid(user_id, tariff_key)
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
     
     if is_paid:
         text = LANG[lang]["tariff_desc_paid"].format(
@@ -1153,19 +1899,60 @@ async def process_promo(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
         return
 
-    if promo_code in PROMO_CODES:
-        discount = PROMO_CODES[promo_code]
-        await state.update_data(discount=discount)
-        
+    promo = get_promo_code(promo_code)
+    
+    if not promo:
+        if promo_code in PROMO_CODES:
+            discount = PROMO_CODES[promo_code]
+            await state.update_data(discount=discount, current_tariff=tariff_key)
+            
+            if tariff_key and tariff_key in TARIFFS:
+                tariff = TARIFFS[tariff_key]
+                name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+                new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+                
+                text = LANG[lang]["promo_success"].format(
+                    code=promo_code, 
+                    discount=discount, 
+                    name=name, 
+                    old_rub=tariff['price_rub'], 
+                    new_rub=new_rub
+                )
+                await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+                await state.clear()
+            else:
+                await message.answer("❌ Сначала выберите тариф.")
+                await state.clear()
+            return
+        else:
+            await message.answer(LANG[lang]["promo_fail"])
+            return
+    
+    expires_at = promo.get('expires_at')
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
+        await message.answer(LANG[lang]["promo_expired"])
+        return
+    
+    discount = promo['discount_percent']
+    await state.update_data(discount=discount, current_tariff=tariff_key)
+    
+    if tariff_key and tariff_key in TARIFFS:
         tariff = TARIFFS[tariff_key]
         name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
         new_rub = int(tariff['price_rub'] * (1 - discount / 100))
         
-        text = LANG[lang]["promo_success"].format(code=promo_code, discount=discount, name=name, old_rub=tariff['price_rub'], new_rub=new_rub)
+        text = LANG[lang]["promo_success"].format(
+            code=promo_code, 
+            discount=discount, 
+            name=name, 
+            old_rub=tariff['price_rub'], 
+            new_rub=new_rub
+        )
         await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
         await state.clear()
     else:
-        await message.answer(LANG[lang]["promo_fail"])
+        await message.answer("❌ Сначала выберите тариф.")
+        await state.clear()
 
 @dp.callback_query(F.data.startswith("cancel_promo_"))
 async def cancel_promo(callback: CallbackQuery, state: FSMContext):
@@ -1197,7 +1984,7 @@ async def cancel_promo(callback: CallbackQuery, state: FSMContext):
     else:
         price_text = f"{tariff['price_rub']} RUB"
 
-    is_paid = is_tariff_paid(user_id, tariff_key)
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
     
     if is_paid:
         text = LANG[lang]["tariff_desc_paid"].format(
@@ -1226,32 +2013,19 @@ async def choose_payment(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    tariff = TARIFFS[tariff_key]
+    await choose_payment_logic(callback, state, tariff_key)
+
+@dp.callback_query(F.data.startswith("pay_for_friend_"))
+async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     
-    if tariff['price_rub'] == 0:
-        lang = await get_lang(state)
-        user_id = callback.from_user.id
-        await callback.message.delete()
-        await save_payment_and_send_link(callback.message, tariff_key, lang, user_id)
-        await callback.answer("✅ Доступ открыт!")
+    tariff_key = callback.data.replace("pay_for_friend_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
         return
     
-    lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
-    
-    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
-    
-    if discount > 0:
-        show_rub = int(tariff['price_rub'] * (1 - discount / 100))
-        price_text = f"<s>{tariff['price_rub']} RUB</s> → {show_rub} RUB (-{discount}%)"
-    else:
-        show_rub = tariff['price_rub']
-        price_text = f"{show_rub} RUB"
-    
-    text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
-    await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+    await choose_payment_logic(callback, state, tariff_key)
 
 @dp.callback_query(F.data.startswith("pay_card_"))
 async def process_card_payment(callback: CallbackQuery, state: FSMContext):
@@ -1420,7 +2194,7 @@ async def cancel_payment(callback: CallbackQuery, state: FSMContext):
     else:
         price_text = f"{tariff['price_rub']} RUB"
 
-    is_paid = is_tariff_paid(user_id, tariff_key)
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
     
     if is_paid:
         text = LANG[lang]["tariff_desc_paid"].format(
@@ -1524,10 +2298,9 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    usdt_rate = 80
-    final_usdt = round_to_half(final_rub / usdt_rate)
+    final_usdt = round_to_half(final_rub / USDT_RATE)
     
-    invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "USDT")
+    invoice_data = await create_crypto_invoice_usd(final_usdt, user_id, tariff_key, "USDT")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
@@ -1535,11 +2308,7 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
         
         save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "USDT")
         
-        text = LANG[lang]["pay_crypto_invoice"].format(
-            name=name,
-            amount=final_usdt,
-            asset="USDT"
-        )
+        text = LANG[lang]["pay_crypto_invoice"]
         
         await callback.message.edit_text(
             text,
@@ -1575,22 +2344,18 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    ton_rate = 150
-    final_ton = round_to_half(final_rub / ton_rate)
+    final_usd = round_to_half(final_rub / USD_RATE)
+    final_gram = round_to_half(final_usd / GRAM_RATE)
     
-    invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
+    invoice_data = await create_crypto_invoice_usd(final_gram, user_id, tariff_key, "TON")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
-        save_crypto_invoice(invoice_id, user_id, tariff_key, final_ton, "TON")
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_gram, "TON")
         
-        text = LANG[lang]["pay_crypto_invoice"].format(
-            name=name,
-            amount=final_ton,
-            asset="TON"
-        )
+        text = LANG[lang]["pay_crypto_invoice"]
         
         await callback.message.edit_text(
             text,
@@ -1626,10 +2391,10 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    btc_rate = 4000000
-    final_btc = round(final_rub / btc_rate, 8)
+    final_usd = round_to_half(final_rub / USD_RATE)
+    final_btc = round(final_usd / BTC_RATE, 8)
     
-    invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
+    invoice_data = await create_crypto_invoice_usd(final_btc, user_id, tariff_key, "BTC")
     
     if invoice_data:
         invoice_id = invoice_data["invoice_id"]
@@ -1637,11 +2402,7 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
         
         save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
         
-        text = LANG[lang]["pay_crypto_invoice"].format(
-            name=name,
-            amount=final_btc,
-            asset="BTC"
-        )
+        text = LANG[lang]["pay_crypto_invoice"]
         
         await callback.message.edit_text(
             text,
@@ -1679,40 +2440,6 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ])
     )
-
-# ==================================================
-# ВЕБХУК ДЛЯ CRYPTOBOT
-# ==================================================
-
-@flask_app.route('/crypto_webhook', methods=['POST'])
-def crypto_webhook():
-    try:
-        data = request.get_json()
-        logging.info(f"Получен вебхук: {data}")
-        
-        if data.get("update_type") == "invoice_paid":
-            invoice_id = data.get("invoice_id", "")
-            
-            invoice = get_crypto_invoice(invoice_id)
-            if invoice:
-                user_id = invoice[1]
-                tariff_key = invoice[2]
-                mark_invoice_paid(invoice_id)
-                
-                asyncio.create_task(send_crypto_success(user_id, tariff_key))
-        
-        return "OK", 200
-    except Exception as e:
-        logging.error(f"Ошибка вебхука: {e}")
-        return "Error", 500
-
-async def send_crypto_success(user_id: int, tariff_key: str):
-    try:
-        lang = "ru"
-        text = LANG[lang]["crypto_payment_success"]
-        await bot.send_message(user_id, text)
-    except Exception as e:
-        logging.error(f"Ошибка отправки сообщения об успешной оплате: {e}")
 
 # ==================================================
 # АДМИН: ЗАЯВКИ НА ОПЛАТУ
@@ -1882,6 +2609,12 @@ async def confirm_payment(callback: CallbackQuery):
     
     add_paid_tariff(user_id, tariff_key)
     
+    tariff = TARIFFS.get(tariff_key)
+    if tariff and tariff.get('duration_days') is not None:
+        extend_subscription(user_id, tariff_key, tariff['duration_days'])
+    else:
+        add_subscription(user_id, tariff_key, None)
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('UPDATE payment_requests SET status = "confirmed" WHERE id = ?', (request_id,))
@@ -1910,21 +2643,125 @@ async def back_to_admin(callback: CallbackQuery):
         await callback.answer("❌ Только для админов!", show_alert=True)
         return
     
-    user_count = get_user_count()
-    
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) FROM payment_requests WHERE status = "pending"')
-    pending_count = cursor.fetchone()[0] or 0
-    conn.close()
-    
-    text = LANG["ru"]["admin_panel"].format(user_count=user_count, pending_count=pending_count)
-    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
     await callback.answer()
+    
+    user_count = get_user_count()
+    stats = get_subscription_stats()
+    
+    text = LANG["ru"]["admin_panel"].format(
+        user_count=user_count,
+        subscriptions_count=stats['total'],
+        expiring_tomorrow=stats['expiring_tomorrow']
+    )
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
 
 # ==================================================
 # ЗАПУСК
 # ==================================================
+
+async def check_expired_subscriptions():
+    while True:
+        try:
+            logging.info("🔄 Проверка истекших подписок...")
+            
+            expired = get_expired_subscriptions()
+            for sub in expired:
+                user_id = sub['user_id']
+                tariff_key = sub['tariff_key']
+                tariff_name = get_tariff_name(tariff_key, "ru")
+                
+                channel = get_tariff_channel(tariff_key)
+                if channel and channel.get('channel_id'):
+                    try:
+                        chat_id = int(channel['channel_id'])
+                        await bot.ban_chat_member(chat_id, user_id)
+                        await bot.unban_chat_member(chat_id, user_id)
+                        logging.info(f"✅ Кикнут пользователь {user_id} из канала {chat_id}")
+                    except Exception as e:
+                        logging.error(f"Ошибка кика: {e}")
+                
+                expire_subscription(user_id, tariff_key)
+                
+                try:
+                    text = LANG["ru"]["subscription_expired"].format(tariff_name=tariff_name)
+                    await bot.send_message(user_id, text)
+                except Exception as e:
+                    logging.error(f"Ошибка отправки уведомления: {e}")
+            
+            expiring_soon = get_expiring_soon_subscriptions(3)
+            for sub in expiring_soon:
+                user_id = sub['user_id']
+                tariff_key = sub['tariff_key']
+                tariff_name = get_tariff_name(tariff_key, "ru")
+                
+                try:
+                    text = LANG["ru"]["subscription_expiring_soon"].format(
+                        tariff_name=tariff_name,
+                        days=3
+                    )
+                    await bot.send_message(user_id, text)
+                except Exception as e:
+                    logging.error(f"Ошибка отправки напоминания: {e}")
+            
+            logging.info("✅ Проверка завершена")
+            
+        except Exception as e:
+            logging.error(f"Ошибка в check_expired_subscriptions: {e}")
+        
+        await asyncio.sleep(43200)
+
+@dp.callback_query(F.data.startswith("access_"))
+async def access_subscription(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("access_", "")
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    sub = get_subscription_by_tariff(user_id, tariff_key)
+    if not sub:
+        await callback.message.edit_text("❌ У вас нет активной подписки на этот тариф.")
+        return
+    
+    tariff_channel = get_tariff_channel(tariff_key)
+    
+    if tariff_channel and tariff_channel.get('invite_link'):
+        text = LANG[lang]["access_info"]
+        invite_link = tariff_channel['invite_link']
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 ВСТУПИТЬ", url=invite_link)],
+                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
+                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
+            ])
+        )
+    else:
+        await callback.message.edit_text("❌ Для этого тарифа еще не настроена ссылка на канал. Обратитесь к администратору.")
+
+@dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
+async def show_prices(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    await message.answer(
+        LANG[lang]["prices_menu"],
+        reply_markup=get_tariff_keyboard(lang)
+    )
+
+@dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
+async def show_subscriptions(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = message.from_user.id
+    
+    subscriptions = get_active_subscriptions(user_id)
+    
+    if subscriptions:
+        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
+        await message.answer(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+    else:
+        await message.answer(LANG[lang]["no_subs"])
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
@@ -1935,11 +2772,14 @@ async def main():
     
     print("=" * 60)
     print("🚀 ОСНОВНОЙ БОТ ЗАПУЩЕН!")
-    print("📦 База данных: Supabase + SQLite")
-    print(f"🪙 CRYPTO_TOKEN: {CRYPTOBOT_API_KEY[:10]}... (задан)" if CRYPTOBOT_API_KEY else "🪙 CRYPTO_TOKEN: НЕ ЗАДАН!")
+    print("📦 База данных: Supabase REST API + SQLite")
+    print(f"🪙 CRYPTO_TOKEN: {'✅' if CRYPTOBOT_API_KEY else '❌'}")
+    print(f"🗄️ SUPABASE: {'✅' if SUPABASE_URL and SUPABASE_KEY else '❌'}")
     print("📞 Поддержка: @kasgd")
     print("👥 Админы: " + ", ".join(str(admin) for admin in ADMIN_IDS))
     print("=" * 60)
+    
+    asyncio.create_task(check_expired_subscriptions())
     
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
