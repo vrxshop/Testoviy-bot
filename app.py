@@ -1182,16 +1182,14 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Тех.поддержка: @kasgd"""
     
+    menu_text = LANG[lang]["main_menu_text"]
+    
+    # ПЕРВОЕ сообщение - приветствие
     await message.answer(welcome_text, disable_web_page_preview=True)
     
-    menu_text = LANG[lang]["main_menu_text"]
+    # ВТОРОЕ сообщение - меню + тарифы (всё в одном)
     await message.answer(
-        menu_text,
-        reply_markup=get_main_keyboard(lang)
-    )
-    
-    await message.answer(
-        LANG[lang]["prices_menu"],
+        menu_text + "\n\nВыберите тариф:",
         reply_markup=get_tariff_keyboard(lang)
     )
 
@@ -1464,6 +1462,11 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     tariff_key = data.get("admin_key_tariff")
     
+    if not tariff_key:
+        await callback.message.edit_text("❌ Ошибка: тариф не выбран.")
+        return
+    
+    # СОЗДАЕМ КЛЮЧ
     key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
     
     if key:
@@ -2621,17 +2624,13 @@ async def confirm_payment(callback: CallbackQuery):
     conn.commit()
     conn.close()
     
-    lang = "ru"
-    chat_id = CHANNEL_IDS.get(tariff_key)
-    if chat_id:
-        link = await create_one_time_link(chat_id)
-        if link:
-            text = LANG[lang]["payment_success"].format(link=link)
-            await bot.send_message(user_id, text, disable_web_page_preview=False)
-        else:
-            await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
-    else:
-        await bot.send_message(user_id, "✅ Оплата подтверждена! Напишите @kasgd для получения ссылки.")
+    # НОВЫЙ ТЕКСТ
+    await bot.send_message(
+        user_id, 
+        "✅ <b>Оплата подтверждена!</b>\n\n"
+        "Ваша подписка уже появилась в разделе \"Мои подписки\".\n\n"
+        "Если канал заблокирован, либо доступ не выдается, пишите админу."
+    )
     
     await callback.message.delete()
     await callback.message.answer(f"✅ Оплата по заявке #{request_id} подтверждена! Пользователь уведомлен.")
