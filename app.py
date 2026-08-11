@@ -1165,13 +1165,12 @@ async def cmd_start(message: Message, state: FSMContext):
     logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
     
     add_user(user_id, first_name, username)
+    await state.update_data(discount=0)
     
-    # Проверка на ключ
     if message.text and " " in message.text:
         parts = message.text.split(maxsplit=1)
         if len(parts) > 1:
             key_param = parts[1]
-            logging.info(f"🔑 Обнаружен ключ: {key_param}")
             key_data = get_subscription_key(key_param)
             if key_data:
                 await process_key_activation(message, key_param, state)
@@ -1181,7 +1180,6 @@ async def cmd_start(message: Message, state: FSMContext):
     
     lang = await get_lang(state)
     
-    # ПЕРВОЕ сообщение - приветствие
     welcome_text = f"""👋 Привет, {first_name}!
 Ты попал в наш бот✅
 
@@ -1191,9 +1189,14 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Тех.поддержка: @kasgd"""
     
-    await message.answer(welcome_text, disable_web_page_preview=True)
+    # ПЕРВОЕ сообщение - приветствие + кнопки внизу
+    await message.answer(
+        welcome_text,
+        reply_markup=get_main_keyboard(lang),
+        disable_web_page_preview=True
+    )
     
-    # ВТОРОЕ сообщение - меню + тарифы (всё в одном)
+    # ВТОРОЕ сообщение - меню + тарифы (кнопки внизу уже есть)
     menu_text = LANG[lang]["main_menu_text"]
     await message.answer(
         menu_text,
@@ -1920,8 +1923,6 @@ async def back_to_prices(callback: CallbackQuery, state: FSMContext):
 @dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
 async def show_prices(message: Message, state: FSMContext):
     lang = await get_lang(state)
-    
-    # СБРАСЫВАЕМ СКИДКУ
     await state.update_data(discount=0)
     
     await message.answer(
@@ -1932,18 +1933,22 @@ async def show_prices(message: Message, state: FSMContext):
 @dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
 async def show_subscriptions(message: Message, state: FSMContext):
     lang = await get_lang(state)
-    user_id = message.from_user.id
-    
-    # СБРАСЫВАЕМ СКИДКУ
     await state.update_data(discount=0)
+    user_id = message.from_user.id
     
     subscriptions = get_active_subscriptions(user_id)
     
     if subscriptions:
         text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
-        await message.answer(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+        await message.answer(
+            text,
+            reply_markup=get_subscription_keyboard(subscriptions, lang)
+        )
     else:
-        await message.answer(LANG[lang]["no_subs"])
+        await message.answer(
+            LANG[lang]["no_subs"],
+            reply_markup=get_main_keyboard(lang)
+        )
 
 @dp.callback_query(F.data.startswith("tariff_"))
 async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
