@@ -872,6 +872,8 @@ class AdminStates(StatesGroup):
     waiting_for_promo_code = State()
     waiting_for_promo_discount = State()
     waiting_for_promo_minutes = State()
+    waiting_for_custom_days = State()  # НОВОЕ СОСТОЯНИЕ
+
 
 # --- ФУНКЦИИ ---
 async def create_one_time_link(chat_id: str) -> str:
@@ -1540,7 +1542,7 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
     
     await state.clear()
 
-@dp.message(state="waiting_for_custom_days")
+@dp.message(AdminStates.waiting_for_custom_days)
 async def process_custom_days(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Только для админов!")
@@ -1563,7 +1565,6 @@ async def process_custom_days(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Создаем ключ с указанным сроком
     key = create_subscription_key(tariff_key, days, message.from_user.id)
     
     if key:
