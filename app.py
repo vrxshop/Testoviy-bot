@@ -1891,6 +1891,10 @@ async def back_to_admin(callback: CallbackQuery):
 @dp.callback_query(F.data == "back_to_subs")
 async def back_to_subs(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    
+    # СБРАСЫВАЕМ СКИДКУ
+    await state.update_data(discount=0)
+    
     lang = await get_lang(state)
     user_id = callback.from_user.id
     
@@ -1906,14 +1910,40 @@ async def back_to_subs(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "back_to_prices")
 async def back_to_prices(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    
+    # СБРАСЫВАЕМ СКИДКУ
+    await state.update_data(discount=0)
+    
     lang = await get_lang(state)
     await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
-@dp.callback_query(F.data == "show_paki")
-async def show_paki(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
+@dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
+async def show_prices(message: Message, state: FSMContext):
     lang = await get_lang(state)
-    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_paki_keyboard(lang))
+    
+    # СБРАСЫВАЕМ СКИДКУ
+    await state.update_data(discount=0)
+    
+    await message.answer(
+        LANG[lang]["prices_menu"],
+        reply_markup=get_tariff_keyboard(lang)
+    )
+
+@dp.message(F.text.in_([LANG["ru"]["btn_subs"], LANG["en"]["btn_subs"]]))
+async def show_subscriptions(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    user_id = message.from_user.id
+    
+    # СБРАСЫВАЕМ СКИДКУ
+    await state.update_data(discount=0)
+    
+    subscriptions = get_active_subscriptions(user_id)
+    
+    if subscriptions:
+        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
+        await message.answer(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+    else:
+        await message.answer(LANG[lang]["no_subs"])
 
 @dp.callback_query(F.data.startswith("tariff_"))
 async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
@@ -1997,7 +2027,6 @@ async def process_promo(message: Message, state: FSMContext):
     if not promo:
         if promo_code in PROMO_CODES:
             discount = PROMO_CODES[promo_code]
-            # СОХРАНЯЕМ СКИДКУ
             await state.update_data(discount=discount, current_tariff=tariff_key)
             
             tariff = TARIFFS[tariff_key]
@@ -2011,7 +2040,6 @@ async def process_promo(message: Message, state: FSMContext):
                 old_rub=tariff['price_rub'], 
                 new_rub=new_rub
             )
-            # ПЕРЕДАЕМ СКИДКУ В КЛАВИАТУРУ
             await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
             return
         else:
@@ -2330,6 +2358,7 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
         ]),
         disable_web_page_preview=True
     )
+
 # ==================================================
 # КРИПТОВАЛЮТА
 # ==================================================
@@ -2400,16 +2429,12 @@ async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
 async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("crypto_ton_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
@@ -2447,16 +2472,12 @@ async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
 async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("crypto_btc_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
@@ -2494,11 +2515,9 @@ async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
 async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("crypto_direct_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     lang = await get_lang(state)
     
@@ -2511,7 +2530,6 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ])
     )
-
 # ==================================================
 # АДМИН: ЗАЯВКИ НА ОПЛАТУ
 # ==================================================
