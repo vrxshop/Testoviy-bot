@@ -1187,9 +1187,15 @@ async def cmd_start(message: Message, state: FSMContext):
     # ПЕРВОЕ сообщение - приветствие
     await message.answer(welcome_text, disable_web_page_preview=True)
     
-    # ВТОРОЕ сообщение - меню + тарифы (всё в одном)
+    # ВТОРОЕ сообщение - меню + тарифы (с кнопками!)
     await message.answer(
-        menu_text + "\n\nВыберите тариф:",
+        menu_text,
+        reply_markup=get_main_keyboard(lang)  # <-- ЭТО КНОПКИ ВНИЗУ
+    )
+    
+    # ТРЕТЬЕ сообщение - тарифы
+    await message.answer(
+        "Выберите тариф:",
         reply_markup=get_tariff_keyboard(lang)
     )
 
@@ -1198,46 +1204,75 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
     username = message.from_user.username or "без username"
     lang = await get_lang(state)
     
+    logging.info(f"🔑 Попытка активации ключа: {key_param} от {user_id}")
+    
+    # Проверяем ключ в базе
     key_data = get_subscription_key(key_param)
     
     if not key_data:
-        await message.answer(LANG[lang]["key_not_found"])
+        await message.answer("❌ Такого ключа не существует или он истек.")
         return
     
     tariff_key = key_data['tariff_key']
     duration_days = key_data['duration_days']
-    
     tariff = TARIFFS.get(tariff_key)
-    tariff_name = get_tariff_name(tariff_key, lang)
     
+    if not tariff:
+        await message.answer("❌ Ошибка: тариф не найден.")
+        return
+    
+    tariff_name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    # Проверяем есть ли уже подписка на этот тариф
     existing_sub = get_subscription_by_tariff(user_id, tariff_key)
     
     if existing_sub:
+        # Продлеваем существующую подписку
         if duration_days is not None:
             extend_subscription(user_id, tariff_key, duration_days)
             expires_at = datetime.now() + timedelta(days=duration_days)
         else:
             expires_at = None
+        action = "продлена"
     else:
+        # Создаем новую подписку
+        if duration_days is not None:
+            expires_at = datetime.now() + timedelta(days=duration_days)
+        else:
+            expires_at = None
         add_subscription(user_id, tariff_key, duration_days)
-        sub = get_subscription_by_tariff(user_id, tariff_key)
-        expires_at = sub['expires_at'] if sub else None
+        action = "активирован"
     
+    # Удаляем использованный ключ
     delete_subscription_key(key_param)
     
-    text = LANG[lang]["key_activated"].format(
-        tariff_name=tariff_name,
-        expires_at=format_date(expires_at)
-    )
+    # Отправляем сообщение пользователю
+    if duration_days is not None:
+        days_text = f"{duration_days} дней"
+        if duration_days == 1:
+            days_text = "1 день"
+        elif duration_days in [2, 3, 4]:
+            days_text = f"{duration_days} дня"
+        expires_text = format_date(expires_at)
+    else:
+        days_text = "бессрочно"
+        expires_text = "Бессрочно"
+    
+    text = f"✅ <b>Ваш ключ активирован!</b>\n\n"
+    text += f"📋 Вы получили <b>«{tariff_name}»</b>\n"
+    text += f"📅 Срок: <b>{days_text}</b>\n\n"
+    text += f"Доступ уже появился в разделе <b>\"Мои подписки\"</b>."
+    
     await message.answer(text)
     
+    # Уведомляем админов
     user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
-    admin_text = LANG[lang]["key_activated_admin"].format(
-        user_link=user_link,
-        user_id=user_id,
-        tariff_name=tariff_name,
-        expires_at=format_date(expires_at)
-    )
+    admin_text = f"🔑 <b>Активирован ключ!</b>\n\n"
+    admin_text += f"👤 Пользователь: {user_link}\n"
+    admin_text += f"🆔 ID: <code>{user_id}</code>\n"
+    admin_text += f"📋 Тариф: {tariff_name}\n"
+    admin_text += f"📅 Действует до: {expires_text}"
+    
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(admin_id, admin_text)
