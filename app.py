@@ -1163,13 +1163,24 @@ async def cmd_start(message: Message, state: FSMContext):
     
     add_user(user_id, first_name, username)
     
+    # ПРОВЕРКА НА КЛЮЧ - ЭТО ВАЖНО!
     if message.text and " " in message.text:
-        parts = message.text.split()
-        if len(parts) > 1 and parts[0] == "/start":
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1:
             key_param = parts[1]
-            if key_param.startswith("key_"):
+            logging.info(f"🔑 Обнаружен ключ: {key_param}")
+            
+            # Проверяем, начинается ли с "key_" (если твои ключи так начинаются)
+            # или просто проверяем наличие ключа в базе
+            key_data = get_subscription_key(key_param)
+            if key_data:
                 await process_key_activation(message, key_param, state)
                 return
+            else:
+                # Если ключ не найден - показываем сообщение
+                await message.answer("❌ Такого ключа не существует или он истек.")
+                # Продолжаем обычный старт
+                # return - НЕ ВОЗВРАЩАЕМ, а просто показываем дальше
     
     lang = await get_lang(state)
     
@@ -1184,16 +1195,11 @@ async def cmd_start(message: Message, state: FSMContext):
     
     menu_text = LANG[lang]["main_menu_text"]
     
-    # ПЕРВОЕ сообщение - приветствие
     await message.answer(welcome_text, disable_web_page_preview=True)
-    
-    # ВТОРОЕ сообщение - меню + тарифы (с кнопками!)
     await message.answer(
         menu_text,
-        reply_markup=get_main_keyboard(lang)  # <-- ЭТО КНОПКИ ВНИЗУ
+        reply_markup=get_main_keyboard(lang)
     )
-    
-    # ТРЕТЬЕ сообщение - тарифы
     await message.answer(
         "Выберите тариф:",
         reply_markup=get_tariff_keyboard(lang)
@@ -1204,14 +1210,15 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
     username = message.from_user.username or "без username"
     lang = await get_lang(state)
     
-    logging.info(f"🔑 Попытка активации ключа: {key_param} от {user_id}")
+    logging.info(f"🔑 Активация ключа: {key_param} от {user_id}")
     
-    # Проверяем ключ в базе
     key_data = get_subscription_key(key_param)
-    
     if not key_data:
+        logging.warning(f"❌ Ключ не найден: {key_param}")
         await message.answer("❌ Такого ключа не существует или он истек.")
         return
+    
+    logging.info(f"✅ Ключ найден: {key_data}")
     
     tariff_key = key_data['tariff_key']
     duration_days = key_data['duration_days']
