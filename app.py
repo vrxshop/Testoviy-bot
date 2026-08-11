@@ -1456,20 +1456,34 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
     
+    # Получаем выбранное количество дней
     days_str = callback.data.replace("admin_key_days_", "")
     duration_days = None if days_str == "0" else int(days_str)
     
+    # Получаем тариф из состояния
     data = await state.get_data()
     tariff_key = data.get("admin_key_tariff")
     
     if not tariff_key:
-        await callback.message.edit_text("❌ Ошибка: тариф не выбран.")
+        await callback.message.edit_text("❌ Ошибка: тариф не выбран. Начните заново.")
         return
     
-    # СОЗДАЕМ КЛЮЧ
-    key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
+    logging.info(f"📝 Создание ключа: tariff_key={tariff_key}, days={duration_days}")
     
-    if key:
+    # Генерируем ключ
+    key = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+    
+    try:
+        # Сохраняем в Supabase
+        response = supabase.table('subscription_keys').insert({
+            'key': key,
+            'tariff_key': tariff_key,
+            'duration_days': duration_days,
+            'created_by': callback.from_user.id
+        }).execute()
+        
+        logging.info(f"✅ Ключ создан: {key}")
+        
         tariff = TARIFFS[tariff_key]
         link = f"https://t.me/{bot.username}?start={key}"
         
@@ -1481,8 +1495,10 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
         text += "⚠️ Ключ одноразовый. После активации будет удален."
         
         await callback.message.edit_text(text)
-    else:
-        await callback.message.edit_text("❌ Ошибка создания ключа. Попробуйте позже.")
+        
+    except Exception as e:
+        logging.error(f"❌ Ошибка создания ключа: {e}")
+        await callback.message.edit_text(f"❌ Ошибка создания ключа: {e}")
     
     await state.clear()
 
