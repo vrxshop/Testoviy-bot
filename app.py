@@ -1166,27 +1166,22 @@ async def cmd_start(message: Message, state: FSMContext):
     
     add_user(user_id, first_name, username)
     
-    # ПРОВЕРКА НА КЛЮЧ - ЭТО ВАЖНО!
+    # Проверка на ключ
     if message.text and " " in message.text:
         parts = message.text.split(maxsplit=1)
         if len(parts) > 1:
             key_param = parts[1]
             logging.info(f"🔑 Обнаружен ключ: {key_param}")
-            
-            # Проверяем, начинается ли с "key_" (если твои ключи так начинаются)
-            # или просто проверяем наличие ключа в базе
             key_data = get_subscription_key(key_param)
             if key_data:
                 await process_key_activation(message, key_param, state)
                 return
             else:
-                # Если ключ не найден - показываем сообщение
                 await message.answer("❌ Такого ключа не существует или он истек.")
-                # Продолжаем обычный старт
-                # return - НЕ ВОЗВРАЩАЕМ, а просто показываем дальше
     
     lang = await get_lang(state)
     
+    # ПЕРВОЕ сообщение - приветствие
     welcome_text = f"""👋 Привет, {first_name}!
 Ты попал в наш бот✅
 
@@ -1196,15 +1191,12 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Тех.поддержка: @kasgd"""
     
-    menu_text = LANG[lang]["main_menu_text"]
-    
     await message.answer(welcome_text, disable_web_page_preview=True)
+    
+    # ВТОРОЕ сообщение - меню + тарифы (всё в одном)
+    menu_text = LANG[lang]["main_menu_text"]
     await message.answer(
         menu_text,
-        reply_markup=get_main_keyboard(lang)
-    )
-    await message.answer(
-        "Выберите тариф:",
         reply_markup=get_tariff_keyboard(lang)
     )
 
