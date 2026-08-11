@@ -1068,9 +1068,9 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
         btn_crypto = LANG[lang]["btn_pay_crypto"]
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=btn_card, callback_data=f"pay_card_{tariff_key}")],
-        [InlineKeyboardButton(text=btn_stars, callback_data=f"pay_stars_{tariff_key}")],
-        [InlineKeyboardButton(text=btn_crypto, callback_data=f"pay_crypto_{tariff_key}")],
+        [InlineKeyboardButton(text=btn_card, callback_data=f"pay_card_{tariff_key}_{discount_percent}")],
+        [InlineKeyboardButton(text=btn_stars, callback_data=f"pay_stars_{tariff_key}_{discount_percent}")],
+        [InlineKeyboardButton(text=btn_crypto, callback_data=f"pay_crypto_{tariff_key}_{discount_percent}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
@@ -2005,25 +2005,22 @@ async def process_promo(message: Message, state: FSMContext):
     if not promo:
         if promo_code in PROMO_CODES:
             discount = PROMO_CODES[promo_code]
+            # СОХРАНЯЕМ СКИДКУ
             await state.update_data(discount=discount, current_tariff=tariff_key)
             
-            if tariff_key and tariff_key in TARIFFS:
-                tariff = TARIFFS[tariff_key]
-                name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-                new_rub = int(tariff['price_rub'] * (1 - discount / 100))
-                
-                text = LANG[lang]["promo_success"].format(
-                    code=promo_code, 
-                    discount=discount, 
-                    name=name, 
-                    old_rub=tariff['price_rub'], 
-                    new_rub=new_rub
-                )
-                await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
-                await state.clear()
-            else:
-                await message.answer("❌ Сначала выберите тариф.")
-                await state.clear()
+            tariff = TARIFFS[tariff_key]
+            name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+            new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+            
+            text = LANG[lang]["promo_success"].format(
+                code=promo_code, 
+                discount=discount, 
+                name=name, 
+                old_rub=tariff['price_rub'], 
+                new_rub=new_rub
+            )
+            # ПЕРЕДАЕМ СКИДКУ В КЛАВИАТУРУ
+            await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
             return
         else:
             await message.answer(LANG[lang]["promo_fail"])
@@ -2037,23 +2034,18 @@ async def process_promo(message: Message, state: FSMContext):
     discount = promo['discount_percent']
     await state.update_data(discount=discount, current_tariff=tariff_key)
     
-    if tariff_key and tariff_key in TARIFFS:
-        tariff = TARIFFS[tariff_key]
-        name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
-        new_rub = int(tariff['price_rub'] * (1 - discount / 100))
-        
-        text = LANG[lang]["promo_success"].format(
-            code=promo_code, 
-            discount=discount, 
-            name=name, 
-            old_rub=tariff['price_rub'], 
-            new_rub=new_rub
-        )
-        await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
-        await state.clear()
-    else:
-        await message.answer("❌ Сначала выберите тариф.")
-        await state.clear()
+    tariff = TARIFFS[tariff_key]
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    text = LANG[lang]["promo_success"].format(
+        code=promo_code, 
+        discount=discount, 
+        name=name, 
+        old_rub=tariff['price_rub'], 
+        new_rub=new_rub
+    )
+    await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
 @dp.callback_query(F.data.startswith("cancel_promo_"))
 async def cancel_promo(callback: CallbackQuery, state: FSMContext):
@@ -2132,15 +2124,11 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
 async def process_card_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("pay_card_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     user_id = callback.from_user.id
     
     final_price = int(TARIFFS[tariff_key]['price_rub'] * (1 - discount / 100))
@@ -2156,7 +2144,7 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [copy_button],
-            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ]),
         disable_web_page_preview=True
@@ -2170,14 +2158,12 @@ async def copy_card(callback: CallbackQuery):
 async def i_paid(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("i_paid_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     lang = await get_lang(state)
-    await state.update_data(current_tariff=tariff_key)
+    await state.update_data(current_tariff=tariff_key, discount=discount)
     
     text = LANG[lang]["i_paid_confirm"]
     
