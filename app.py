@@ -1485,7 +1485,8 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
         logging.info(f"✅ Ключ создан: {key}")
         
         tariff = TARIFFS[tariff_key]
-        link = f"https://t.me/{bot.username}?start={key}"
+        bot_info = await bot.get_me()
+        link = f"https://t.me/{bot_info.username}?start={key}"
         
         text = f"✅ <b>Ключ создан!</b>\n\n"
         text += f"📋 Тариф: {tariff['name_ru']}\n"
