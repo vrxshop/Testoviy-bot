@@ -2535,6 +2535,17 @@ async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ])
     )
+
+@dp.callback_query(F.data == "show_paki")
+async def show_paki(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    
+    text = "📋 <b>Паки</b>\n\nВыберите пак для подробностей:"
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_paki_keyboard(lang)
+    )
 # ==================================================
 # АДМИН: ЗАЯВКИ НА ОПЛАТУ
 # ==================================================
