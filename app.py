@@ -1076,10 +1076,10 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
 
 def get_crypto_currency_keyboard(tariff_key, discount_percent=0, lang="ru"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}"),
-         InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}"),
-         InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}")],
-        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_direct"], callback_data=f"crypto_direct_{tariff_key}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_usdt"], callback_data=f"crypto_usdt_{tariff_key}_{discount_percent}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_ton"], callback_data=f"crypto_ton_{tariff_key}_{discount_percent}"),
+         InlineKeyboardButton(text=LANG[lang]["btn_crypto_btc"], callback_data=f"crypto_btc_{tariff_key}_{discount_percent}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_crypto_direct"], callback_data=f"crypto_direct_{tariff_key}_{discount_percent}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
@@ -2304,16 +2304,12 @@ async def cancel_payment(callback: CallbackQuery, state: FSMContext):
 async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("pay_stars_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     
     final_price = int(tariff['price_stars'] * (1 - discount / 100))
     name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
@@ -2342,7 +2338,6 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
         ]),
         disable_web_page_preview=True
     )
-
 # ==================================================
 # КРИПТОВАЛЮТА
 # ==================================================
@@ -2351,11 +2346,12 @@ async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
 async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("pay_crypto_", "")
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    # Сохраняем скидку в состояние для следующих шагов
+    await state.update_data(discount=discount, current_tariff=tariff_key)
     
     lang = await get_lang(state)
     
@@ -2363,23 +2359,19 @@ async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(
         text,
-        reply_markup=get_crypto_currency_keyboard(tariff_key, 0, lang)
+        reply_markup=get_crypto_currency_keyboard(tariff_key, discount, lang)
     )
 
 @dp.callback_query(F.data.startswith("crypto_usdt_"))
 async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    tariff_key = callback.data.replace("crypto_usdt_", "")
-    
-    if tariff_key not in TARIFFS:
-        await callback.answer("❌ Тариф не найден", show_alert=True)
-        return
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
     
     tariff = TARIFFS[tariff_key]
     lang = await get_lang(state)
-    data = await state.get_data()
-    discount = data.get("discount", 0)
     user_id = callback.from_user.id
     
     final_rub = int(tariff['price_rub'] * (1 - discount / 100))
