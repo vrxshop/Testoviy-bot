@@ -874,7 +874,6 @@ class AdminStates(StatesGroup):
     waiting_for_promo_minutes = State()
     waiting_for_custom_days = State()  # НОВОЕ СОСТОЯНИЕ
 
-
 # --- ФУНКЦИИ ---
 async def create_one_time_link(chat_id: str) -> str:
     try:
@@ -1509,7 +1508,7 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
             "📝 <b>Введите срок в днях</b>\n\n"
             "Напишите число (например: 45, 100, 365):"
         )
-        await state.set_state("waiting_for_custom_days")
+        await state.set_state(AdminStates.waiting_for_custom_days)  # <-- ПРАВИЛЬНО!
         return
     
     duration_days = None if days_str == "0" else int(days_str)
