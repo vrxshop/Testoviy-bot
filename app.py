@@ -560,6 +560,7 @@ CHANNEL_IDS = {
 # ==================================================
 LANG = {
     "ru": {
+        "channel_unavailable": "❌ <b>Канал временно не доступен либо забанен.</b>\n\nДля уточнения сроков восстановления, напишите админу @kasgd\n\n❕ Важно: когда админ починит доступ, у вас он автоматически появится."
         "start_promo": "🎉 <b>Промокод {code} активирован! Скидка {discount}%!</b>",
         "start_welcome": "👋 Привет, {name}!\n\n<a href=\"{offer}\">Пользовательское соглашение</a>\n<a href=\"{policy}\">Политика конфиденциальности</a>",
         "prices_menu": "📋 <b>Прайс</b>\n\nВыберите тариф, чтобы узнать подробности и оформить покупку.",
@@ -626,6 +627,7 @@ LANG = {
         "key_activated_admin": "🔑 <b>Активирован ключ!</b>\n\n👤 Пользователь: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Тариф: {tariff_name}\n📅 Действует до: {expires_at}"
     },
     "en": {
+        "channel_unavailable": "❌ <b>The channel is temporarily unavailable or banned.</b>\n\nTo clarify the recovery time, contact admin @kasgd\n\n❕ Important: when the admin fixes access, it will appear automatically.",
         "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
         "start_welcome": "👋 Hello, {name}!\n\n<a href=\"{offer}\">Terms of Service</a>\n<a href=\"{policy}\">Privacy Policy</a>",
         "prices_menu": "📋 <b>Prices</b>\n\nSelect a tariff to view details and make a purchase.",
@@ -1473,15 +1475,14 @@ async def admin_key_tariff(callback: CallbackQuery, state: FSMContext):
         ("30 дней", 30),
         ("60 дней", 60),
         ("90 дней", 90),
-        ("Бессрочно", None)
+        ("Бессрочно", None),
+        ("✏️ Свой срок", "custom")  # <-- НОВАЯ КНОПКА
     ]
     
     buttons = []
     for label, days in duration_options:
-        buttons.append([InlineKeyboardButton(
-            text=label, 
-            callback_data=f"admin_key_days_{days if days is not None else '0'}"
-        )])
+        callback_data = f"admin_key_days_{days if days is not None else '0'}"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=callback_data)])
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="admin_create_key")])
     
     await callback.message.edit_text(
@@ -1498,34 +1499,30 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
     
-    # Получаем выбранное количество дней
     days_str = callback.data.replace("admin_key_days_", "")
+    
+    # Если выбрано "Свой срок"
+    if days_str == "custom":
+        await callback.message.edit_text(
+            "📝 <b>Введите срок в днях</b>\n\n"
+            "Напишите число (например: 45, 100, 365):"
+        )
+        await state.set_state("waiting_for_custom_days")
+        return
+    
     duration_days = None if days_str == "0" else int(days_str)
     
-    # Получаем тариф из состояния
     data = await state.get_data()
     tariff_key = data.get("admin_key_tariff")
     
     if not tariff_key:
-        await callback.message.edit_text("❌ Ошибка: тариф не выбран. Начните заново.")
+        await callback.message.edit_text("❌ Ошибка: тариф не выбран.")
         return
     
-    logging.info(f"📝 Создание ключа: tariff_key={tariff_key}, days={duration_days}")
+    # Создаем ключ
+    key = create_subscription_key(tariff_key, duration_days, callback.from_user.id)
     
-    # Генерируем ключ
-    key = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
-    
-    try:
-        # Сохраняем в Supabase
-        response = supabase.table('subscription_keys').insert({
-            'key': key,
-            'tariff_key': tariff_key,
-            'duration_days': duration_days,
-            'created_by': callback.from_user.id
-        }).execute()
-        
-        logging.info(f"✅ Ключ создан: {key}")
-        
+    if key:
         tariff = TARIFFS[tariff_key]
         bot_info = await bot.get_me()
         link = f"https://t.me/{bot_info.username}?start={key}"
@@ -1538,10 +1535,52 @@ async def admin_key_days(callback: CallbackQuery, state: FSMContext):
         text += "⚠️ Ключ одноразовый. После активации будет удален."
         
         await callback.message.edit_text(text)
+    else:
+        await callback.message.edit_text("❌ Ошибка создания ключа. Проверьте логи.")
+    
+    await state.clear()
+
+@dp.message(state="waiting_for_custom_days")
+async def process_custom_days(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    try:
+        days = int(message.text.strip())
+        if days < 1:
+            await message.answer("❌ Введите положительное число (минимум 1 день).")
+            return
+    except:
+        await message.answer("❌ Введите число. Попробуйте еще раз.")
+        return
+    
+    data = await state.get_data()
+    tariff_key = data.get("admin_key_tariff")
+    
+    if not tariff_key:
+        await message.answer("❌ Ошибка: тариф не выбран.")
+        await state.clear()
+        return
+    
+    # Создаем ключ с указанным сроком
+    key = create_subscription_key(tariff_key, days, message.from_user.id)
+    
+    if key:
+        tariff = TARIFFS[tariff_key]
+        bot_info = await bot.get_me()
+        link = f"https://t.me/{bot_info.username}?start={key}"
         
-    except Exception as e:
-        logging.error(f"❌ Ошибка создания ключа: {e}")
-        await callback.message.edit_text(f"❌ Ошибка создания ключа: {e}")
+        text = f"✅ <b>Ключ создан!</b>\n\n"
+        text += f"📋 Тариф: {tariff['name_ru']}\n"
+        text += f"📅 Срок: {days} дней\n"
+        text += f"🔑 Ключ: <code>{key}</code>\n"
+        text += f"🔗 Ссылка: {link}\n\n"
+        text += "⚠️ Ключ одноразовый. После активации будет удален."
+        
+        await message.answer(text)
+    else:
+        await message.answer("❌ Ошибка создания ключа. Проверьте логи.")
     
     await state.clear()
 
@@ -2784,8 +2823,24 @@ async def access_subscription(callback: CallbackQuery, state: FSMContext):
     
     tariff_channel = get_tariff_channel(tariff_key)
     
+    # Проверяем, если channel_id == "0" или invite_link == "0" - канал недоступен
+    if not tariff_channel or tariff_channel.get('channel_id') == "0" or tariff_channel.get('invite_link') == "0":
+        text = "❌ <b>Канал временно не доступен либо забанен.</b>\n\n"
+        text += "Для уточнения сроков восстановления, напишите админу @kasgd\n\n"
+        text += "❕ Важно: когда админ починит доступ, у вас он автоматически появится."
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
+                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
+            ])
+        )
+        return
+    
     if tariff_channel and tariff_channel.get('invite_link'):
-        text = LANG[lang]["access_info"]
+        text = "✅ <b>Вход открыт.</b>\n\nНажмите на кнопку ВСТУПИТЬ, затем Подать заявку и снова ВСТУПИТЬ:"
         invite_link = tariff_channel['invite_link']
         
         await callback.message.edit_text(
