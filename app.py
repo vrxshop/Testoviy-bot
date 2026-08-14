@@ -309,7 +309,7 @@ SUPPORT_CONTACT_EN = "https://t.me/kasgd"
 ADMIN_IDS = [8370080332, 8559381302, 8924977674]
 
 CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
-CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
+CRYPTOBOT_API_URL = "https://api.crypt.bot/v1/"
 
 # ==================================================
 # ID КАНАЛОВ
