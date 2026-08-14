@@ -794,7 +794,100 @@ LANG = {
 """
     },
     "en": {
-        # Английская версия (можно оставить пустой или скопировать из старого)
+        "channel_unavailable": "❌ <b>The channel is temporarily unavailable or banned.</b>\n\nTo clarify the recovery time, contact admin @kasgd\n\n❕ Important: when the admin fixes access, it will appear automatically.",
+        "start_promo": "🎉 <b>Promo code {code} activated! {discount}% discount!</b>",
+        "start_welcome": "👋 Hello, {name}!\n\n<a href=\"{offer}\">Terms of Service</a>\n<a href=\"{policy}\">Privacy Policy</a>",
+        "prices_menu": "📋 <b>Prices</b>\n\nSelect a tariff to view details and make a purchase.",
+        "subs_menu": "📋 <b>Your active subscriptions</b>\n\n{list}",
+        "no_subs": "⌛️ <b>You don't have any active subscriptions.</b>\n\nSelect a tariff to get access.",
+        "tariff_desc": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}",
+        "tariff_desc_paid": "📋 <b>{name}</b>\n\n💰 Price: {price_text}\nAccess duration: {duration}\n\n{desc}\n\n✅ <b>TARIFF PAID</b>\n\n🔑 To get the link contact support @kasgd",
+        "enter_promo": "🏷️ <b>Enter promo code</b>\n\nType the promo code in the chat.",
+        "promo_success": "✅ Promo code <b>{code}</b> activated! {discount}% discount 🔥\n\n📋 <b>{name}</b>\n💰 Price: <s>{old_rub} RUB</s> → {new_rub} RUB <b>(-{discount}%)</b>\n\nChoose a currency for payment.",
+        "promo_fail": "❌ Promo code not found. Try again (or press ◀️ Cancel).",
+        "promo_expired": "❌ Promo code expired. Try another one.",
+        "choose_pay": "📋 <b>{name}</b>\nAccess duration: {duration}\n💰 Price: {price_text}\n\n🔒 You will get access to:\n• {project} (external link)\n\nChoose payment method",
+        "pay_card": "Payment method: Bank card\n\n💰 Amount: {final} RUB\n🆔 Your ID: {user_id}\n\n📌 <b>Payment details:</b>\n\n💳 2200190284092510\n\n🏧 Bank: Uralsib\nRecipient: Kirill\n\n❗️ Verification may take some time (manual check)\n❕ After payment, press <b>«I Paid»</b> button\n❕ If waiting more than 12 hours, contact admin",
+        "pay_stars": "📋 <b>{name}</b>\nAccess duration: {duration}\n{price_line}💳 Payment method: FOR STARS ⭐\n\n💰 Total cost: {final} STARS\n\nℹ️ <b>Payment info</b>\nSend stars or gifts to this account - <a href=\"{support}\">@kasgd</a>\n\nRate:\n1 ⭐ = 1 ruble",
+        "pay_crypto_choose": "🪙 <b>Choose coin:</b>",
+        "pay_crypto_invoice": "✅ <b>Invoice created.</b>\n\nAccess to closed communities will be opened as soon as you pay it.",
+        "crypto_payment_success": "✅ <b>Payment successful!</b>\n\nFor access write @kasgd\n❗️ Write the tariff you purchased and payment receipt",
+        "refresh_link": "♻️ <i>Link refreshed!</i>",
+        "btn_prices": "💵 Prices",
+        "btn_subs": "⏳ My subscriptions",
+        "btn_ref": "👥 Referrals",
+        "btn_promo": "🏷️ Enter promo code",
+        "btn_pay": "💳 Payment methods",
+        "btn_back": "👈 Back",
+        "btn_pay_card": "💳 Card",
+        "btn_pay_card_disc": "💳 Card 🏷️(-{disc}%)",
+        "btn_pay_stars": "⭐ Stars",
+        "btn_pay_stars_disc": "⭐ Stars 🏷️(-{disc}%)",
+        "btn_pay_crypto": "🪙 Crypto",
+        "btn_pay_crypto_disc": "🪙 Crypto 🏷️(-{disc}%)",
+        "btn_crypto_usdt": "💵 USDT",
+        "btn_crypto_ton": "💎 TON",
+        "btn_crypto_btc": "₿ BTC",
+        "btn_crypto_direct": "📤 Direct transfer",
+        "btn_pay_now": "💳 PAY NOW",
+        "btn_i_paid": "✅ I PAID",
+        "btn_to_prices": "✅ BUY SUBSCRIPTION",
+        "btn_cancel": "🚫 CANCEL",
+        "btn_pay_for_friend": "🎁 PAY FOR FRIEND",
+        "btn_stars_go": "⭐ Stars up to 42% off",
+        "btn_lang": "🇬🇧 Language",
+        "btn_write_user": "✍️ Write personally",
+        "btn_write_via_bot": "🤖 Write via bot",
+        "btn_back_to_admin": "◀️ Back",
+        "btn_join": "🔗 JOIN",
+        "btn_buy_other": "💳 BUY OTHER ACCESS",
+        "payment_success": "✅ <b>Payment successful!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for your purchase! ❤️\n\n📞 Support: @kasgd",
+        "payment_success_test": "✅ <b>Access granted!</b>\n\n🔗 <b>Your access link (valid 30 seconds):</b>\n{link}\n\n⚠️ <b>Warning!</b> The link is valid only 30 seconds!\n\nThank you for using the bot! ❤️\n\n📞 Support: @kasgd",
+        "subs_list_item": "• {name} (paid ✅)",
+        "main_menu_text": "After selecting and paying for the tariff, the bot will automatically give you access to the group. If you lose the link to our VIP, you can always request it again from the bot, it's free.\n\nClick on the tariff to read the description.\n\nEach channel is different",
+        "i_paid_confirm": "💁🏻‍♂️ Paid?\n\n👌🏻 Then send a payment receipt as an image (not document!): screenshot or photo. Otherwise the bot won't know you paid.\n\n📌 The receipt must clearly show: date, time and payment amount. Verification may take up to a day.\n🔒 No one will see your receipts, Telegram doesn't store them.\n\n⚠️ You may be blocked for spam!",
+        "payment_receipt_received": "✅ Your receipt has been received! Administrator will check it shortly.",
+        "new_payment_request": "🆕 <b>New payment request!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n💰 Amount: {amount} RUB\n📝 Message: {message_text}\n\n{media_info}",
+        "admin_panel": "⚙️ <b>Admin panel</b>\n\n👥 Total users: {user_count}\n📋 Active subscriptions: {subscriptions_count}\n⏳ Expiring tomorrow: {expiring_tomorrow}\n\nSelect action:",
+        "crypto_error": "❌ Error creating invoice. Check API key or try again later.",
+        "crypto_direct": "🪙 <b>Direct transfer</b>\n\nFor details or other questions - @kasgd",
+        "subscription_activated": "✅ <b>Tariff name for period</b> activated! Access already appeared in \"⌛ My subscriptions\".",
+        "subscription_extended": "✅ <b>Subscription extended!</b>\n\n📋 Tariff: {tariff_name}\n📅 New expiry: {expires_at}\n\nAccess already appeared in \"⌛ My subscriptions\".",
+        "subscription_expired": "⚠️ <b>Your subscription to \"{tariff_name}\" has expired!</b>\n\nAccess to the community is closed. Pay the tariff again to renew your access.",
+        "subscription_expiring_soon": "⏰ <b>Reminder!</b>\n\nYour subscription to \"{tariff_name}\" expires in {days} day(s).\nPay the tariff again to renew your access.",
+        "access_info": "✅ <b>Access open.</b>\n\nClick the JOIN button, then Submit request and JOIN again:",
+        "no_channel_configured": "❌ No channel link configured for this tariff yet. Contact administrator.",
+        "key_activated": "✅ <b>Key activated!</b>\n\n📋 Tariff: {tariff_name}\n📅 Valid until: {expires_at}\n\nAccess already appeared in \"⌛ My subscriptions\".",
+        "key_not_found": "❌ This key does not exist or has expired.",
+        "key_activated_admin": "🔑 <b>Key activated!</b>\n\n👤 User: {user_link}\n🆔 ID: <code>{user_id}</code>\n📋 Tariff: {tariff_name}\n📅 Valid until: {expires_at}",
+        "ref_menu": """
+👥 <b>Referral system</b>
+
+🔗 <b>Your link:</b>
+<code>{link}</code>
+
+💰 <b>Balance:</b> {balance} ₽
+
+📊 <b>Statistics:</b>
+• Invited: {count} people
+• Earned: {total} ₽
+
+📌 You get 55% from each purchase of your referral.
+💸 Minimum withdrawal amount: 1000 ₽
+""",
+        "ref_withdraw_success": "✅ Withdrawal request #{id} created! Wait for confirmation.",
+        "ref_withdraw_error": "❌ Error creating request. Try again later.",
+        "ref_min_balance": "❌ Minimum withdrawal amount: 1000 ₽. Your balance: {balance} ₽",
+        "ref_withdraw_admin": """
+🆕 <b>NEW WITHDRAWAL REQUEST!</b>
+
+👤 User: {user}
+🆔 ID: <code>{user_id}</code>
+💰 Amount: {amount} ₽
+🆔 Request: #{id}
+
+/confirm_withdraw {id}
+"""
     }
 }
 
