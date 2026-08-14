@@ -1,4 +1,4 @@
-import hashlib  # <-- ДОБАВИТЬ в начале файла
+import hashlib
 import logging
 import asyncio
 import os
@@ -10,7 +10,6 @@ import re
 import aiohttp
 import random
 import string
-import hashlib
 from datetime import datetime, timedelta
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types, F
@@ -110,7 +109,6 @@ def add_user(user_id: int, first_name: str, username: str = None):
             logging.info(f"📊 Обновлено: {update_response.data}")
             return True
         else:
-            # Генерируем реферальный код
             ref_code = hashlib.md5(str(user_id).encode()).hexdigest()[:8]
             
             logging.info(f"➕ Создание пользователя {user_id} с реф. кодом {ref_code}")
@@ -680,18 +678,14 @@ ADMIN_IDS = [8370080332, 8559381302, 8924977674]
 CRYPTOBOT_API_KEY = os.getenv("CRYPTO_TOKEN")
 CRYPTOBOT_API_URL = "https://pay.crypt.bot/api/"
 
-# КУРСЫ
 USDT_RATE = 80
 USD_RATE = 80
 GRAM_RATE = 1.34
 BTC_RATE = 65000
 
-# ==================================================
-# ID КАНАЛОВ
-# ==================================================
 CHANNEL_IDS = {
     "test": "-1003875225035",
-    "test677": "-1003875225035",  # Для тестового тарифа
+    "test677": "-1003875225035",
 }
 
 # ==================================================
@@ -1019,7 +1013,6 @@ TARIFFS = {
     }
 }
 
-# --- ТЕСТОВЫЙ ТАРИФ ---
 TEST_TARIFF = {
     "name_ru": "🧪 ТЕСТОВЫЙ тариф (0.001 USDT)",
     "price_usdt": 0.001,
@@ -1027,7 +1020,6 @@ TEST_TARIFF = {
     "desc_ru": "🧪 Тестовый тариф за 0.001 USDT\n\nИспользуется для проверки работы системы."
 }
 
-# --- ПРОМОКОДЫ ---
 PROMO_CODES = {
     "VIP10": 10,
     "SUPER25": 25,
@@ -1037,13 +1029,11 @@ PROMO_CODES = {
     "newpopolnenie": 60
 }
 
-# --- ИНИЦИАЛИЗАЦИЯ ---
 storage = MemoryStorage()
 session = AiohttpSession()
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML), session=session)
 dp = Dispatcher(storage=storage)
 
-# --- FSM STATES ---
 class PromoStates(StatesGroup):
     waiting_for_promo = State()
 
@@ -1067,9 +1057,8 @@ class AdminStates(StatesGroup):
     waiting_for_promo_discount = State()
     waiting_for_promo_minutes = State()
     waiting_for_custom_days = State()
-    waiting_for_address = State()  # для вывода
+    waiting_for_address = State()
 
-# --- ФУНКЦИИ ---
 async def create_one_time_link(chat_id: str) -> str:
     try:
         expire_date = datetime.now() + timedelta(seconds=30)
@@ -1118,7 +1107,6 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
 async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
     if not CRYPTOBOT_API_KEY:
         logging.error("❌ CRYPTOBOT_API_KEY не задан!")
-        # Возвращаем понятную ошибку вместо None
         return {"error": "CRYPTO_TOKEN не настроен. Обратитесь к администратору."}
     
     url = CRYPTOBOT_API_URL + "createInvoice"
@@ -1126,14 +1114,6 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
         "Crypto-Pay-API-Token": CRYPTOBOT_API_KEY,
         "Content-Type": "application/json"
     }
-    
-    # Конвертация суммы для разных валют
-    if asset == "USDT":
-        amount = float(amount)
-    elif asset == "TON":
-        amount = float(amount) * 0.00015  # Примерный курс
-    elif asset == "BTC":
-        amount = float(amount) * 0.00000015  # Примерный курс
     
     payload = {
         "asset": asset,
@@ -1174,7 +1154,6 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
 async def send_crypto_success(user_id: int, tariff_key: str, amount: float):
     """Выдает доступ после криптоплатежа и начисляет реферальные"""
     try:
-        # Проверяем, есть ли реферер у этого пользователя
         user_response = supabase.table('users')\
             .select('ref_by')\
             .eq('user_id', user_id)\
@@ -1182,7 +1161,7 @@ async def send_crypto_success(user_id: int, tariff_key: str, amount: float):
         
         if user_response.data and user_response.data[0].get('ref_by'):
             referrer_id = user_response.data[0]['ref_by']
-            ref_amount = amount * 55  # 55% от суммы в рублях (1 USDT ≈ 100 RUB)
+            ref_amount = amount * 55
             if tariff_key != "test677":
                 add_ref_earning(user_id, referrer_id, tariff_key, ref_amount)
                 
@@ -1192,7 +1171,6 @@ async def send_crypto_success(user_id: int, tariff_key: str, amount: float):
                     f"📋 Ваш баланс: {get_ref_balance(referrer_id):.2f} ₽"
                 )
         
-        # Выдаем доступ
         if tariff_key not in CHANNEL_IDS:
             return
         
@@ -1257,12 +1235,11 @@ async def choose_payment_logic(callback: CallbackQuery, state: FSMContext, tarif
     text = LANG[lang]["choose_pay"].format(name=name, duration=duration, price_text=price_text, project=PROJECT_NAME)
     await callback.message.edit_text(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
 
-# --- КЛАВИАТУРЫ ---
 def get_main_keyboard(lang):
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text=LANG[lang]["btn_prices"]), 
          KeyboardButton(text=LANG[lang]["btn_subs"])],
-        [KeyboardButton(text=LANG[lang]["btn_ref"])]  # Новая кнопка
+        [KeyboardButton(text=LANG[lang]["btn_ref"])]
     ], resize_keyboard=True)
 
 def get_tariff_keyboard(lang):
@@ -1412,30 +1389,31 @@ async def cmd_start(message: Message, state: FSMContext):
     
     logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
     
-    # ПРАВИЛЬНАЯ ОБРАБОТКА ПАРАМЕТРОВ
     ref_code = None
+    key_param = None
+    
     if message.text and " " in message.text:
         parts = message.text.split(maxsplit=1)
         if len(parts) > 1:
             param = parts[1]
-            # Проверяем ref_XXXXX
             if param.startswith("ref_"):
                 ref_code = param.replace("ref_", "")
             else:
-                # Это может быть ключ активации
-                key_data = get_subscription_key(param)
-                if key_data:
-                    await process_key_activation(message, param, state)
-                    return
+                key_param = param
     
-    # Добавляем пользователя
     add_user(user_id, first_name, username)
     
-    # Если есть реферальная ссылка
+    if key_param:
+        key_data = get_subscription_key(key_param)
+        if key_data:
+            await process_key_activation(message, key_param, state)
+            return
+        else:
+            await message.answer("❌ Такого ключа не существует или он истек.")
+    
     if ref_code:
         referrer_id = get_referrer_by_code(ref_code)
         if referrer_id and referrer_id != user_id:
-            # Проверяем, не был ли уже назначен реферер
             user_check = supabase.table('users')\
                 .select('ref_by')\
                 .eq('user_id', user_id)\
@@ -1455,7 +1433,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 await message.answer("❌ Неверная реферальная ссылка.")
     
     await state.update_data(discount=0)
-    
     lang = await get_lang(state)
     
     welcome_text = f"""👋 Привет, {first_name}!
@@ -1504,7 +1481,6 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
     
     tariff_name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
     
-    # Проверяем есть ли уже подписка на этот тариф
     existing_sub = get_subscription_by_tariff(user_id, tariff_key)
     
     if existing_sub:
@@ -1534,7 +1510,6 @@ async def process_key_activation(message: Message, key_param: str, state: FSMCon
     
     await message.answer(text)
     
-    # Уведомляем админов
     user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
     admin_text = f"🔑 <b>Активирован ключ!</b>\n\n"
     admin_text += f"👤 Пользователь: {user_link}\n"
@@ -2356,7 +2331,7 @@ async def crypto_test677_payment(callback: CallbackQuery, state: FSMContext):
     
     invoice_data = await create_crypto_invoice(amount, user_id, tariff_key, asset)
     
-    if invoice_data:
+    if invoice_data and "error" not in invoice_data:
         invoice_id = invoice_data["invoice_id"]
         pay_url = invoice_data["pay_url"]
         
@@ -2372,8 +2347,9 @@ async def crypto_test677_payment(callback: CallbackQuery, state: FSMContext):
             ])
         )
     else:
+        error_msg = invoice_data.get("error", LANG[lang]["crypto_error"]) if invoice_data else LANG[lang]["crypto_error"]
         await callback.message.edit_text(
-            LANG[lang]["crypto_error"],
+            f"❌ {error_msg}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
             ])
@@ -2382,23 +2358,40 @@ async def crypto_test677_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # ==================================================
-# ОБЫЧНЫЕ ТАРИФЫ И ОПЛАТЫ (СТАРЫЙ КОД)
+# ОБЫЧНЫЕ ТАРИФЫ И ОПЛАТЫ
 # ==================================================
 
-# Здесь остаются все старые обработчики:
-# - tariff_
-# - choose_pay_
-# - pay_card_
-# - pay_stars_
-# - pay_crypto_
-# - i_paid_
-# - process_receipt
-# - confirm_payment
-# - access_
-# - show_paki
-# - back_to_prices
-# - back_to_subs
-# - etc.
+@dp.callback_query(F.data == "back_to_prices")
+async def back_to_prices(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.update_data(discount=0)
+    lang = await get_lang(state)
+    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
+
+@dp.callback_query(F.data == "show_paki")
+async def show_paki(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    lang = await get_lang(state)
+    await callback.message.edit_text(
+        "📋 <b>Паки</b>\n\nВыберите пак для подробностей:",
+        reply_markup=get_paki_keyboard(lang)
+    )
+
+@dp.callback_query(F.data == "back_to_subs")
+async def back_to_subs(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.update_data(discount=0)
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    subscriptions = get_active_subscriptions(user_id)
+    
+    if subscriptions:
+        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
+        await callback.message.edit_text(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
+    else:
+        await callback.message.edit_text(LANG[lang]["no_subs"])
+        await callback.message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
 
 @dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
 async def show_prices(message: Message, state: FSMContext):
@@ -2476,7 +2469,814 @@ async def show_tariff_details(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
 
-# ... и все остальные старые обработчики (их слишком много, но они остаются без изменений)
+@dp.callback_query(F.data.startswith("enter_promo_"))
+async def enter_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("enter_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.update_data(current_tariff=tariff_key)
+    await callback.message.edit_text(
+        LANG[lang]["enter_promo"],
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=LANG[lang]["btn_cancel"], callback_data=f"cancel_promo_{tariff_key}")]])
+    )
+    await state.set_state(PromoStates.waiting_for_promo)
+
+@dp.message(PromoStates.waiting_for_promo)
+async def process_promo(message: Message, state: FSMContext):
+    promo_code = message.text.strip().upper()
+    data = await state.get_data()
+    tariff_key = data.get("current_tariff")
+    lang = await get_lang(state)
+    
+    if not tariff_key or tariff_key not in TARIFFS:
+        await state.clear()
+        await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
+        return
+
+    promo = get_promo_code(promo_code)
+    
+    if not promo:
+        if promo_code in PROMO_CODES:
+            discount = PROMO_CODES[promo_code]
+            await state.update_data(discount=discount, current_tariff=tariff_key)
+            
+            tariff = TARIFFS[tariff_key]
+            name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+            new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+            
+            text = LANG[lang]["promo_success"].format(
+                code=promo_code, 
+                discount=discount, 
+                name=name, 
+                old_rub=tariff['price_rub'], 
+                new_rub=new_rub
+            )
+            await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+            return
+        else:
+            await message.answer(LANG[lang]["promo_fail"])
+            return
+    
+    expires_at = promo.get('expires_at')
+    if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
+        await message.answer(LANG[lang]["promo_expired"])
+        return
+    
+    discount = promo['discount_percent']
+    await state.update_data(discount=discount, current_tariff=tariff_key)
+    
+    tariff = TARIFFS[tariff_key]
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    new_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    text = LANG[lang]["promo_success"].format(
+        code=promo_code, 
+        discount=discount, 
+        name=name, 
+        old_rub=tariff['price_rub'], 
+        new_rub=new_rub
+    )
+    await message.answer(text, reply_markup=get_payment_method_keyboard(tariff_key, discount, lang))
+
+@dp.callback_query(F.data.startswith("cancel_promo_"))
+async def cancel_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("cancel_promo_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.clear()
+    await callback.message.delete()
+    tariff = TARIFFS[tariff_key]
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> -> {new_price} RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} RUB"
+
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.answer(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("choose_pay_"))
+async def choose_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("choose_pay_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    await choose_payment_logic(callback, state, tariff_key)
+
+@dp.callback_query(F.data.startswith("pay_for_friend_"))
+async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("pay_for_friend_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    await choose_payment_logic(callback, state, tariff_key)
+
+@dp.callback_query(F.data.startswith("pay_card_"))
+async def process_card_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    tariff = TARIFFS[tariff_key]
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
+    else:
+        price_line = f"💰 Цена: {final_price} RUB\n"
+    
+    text = f"""
+💳 <b>Оплата через СБП</b>
+
+📋 <b>{name}</b>
+📅 Срок: {duration}
+{price_line}
+
+📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
+
+1️⃣ Перейдите в бот для оплаты:
+👉 @BraDevBot
+
+2️⃣ Купите там услугу <b>«{name}»</b> за {final_price}₽
+
+3️⃣ После оплаты сделайте скриншот чека
+
+4️⃣ Отправьте скриншот @kasgd
+
+5️⃣ Укажите название тарифа
+
+⏰ Время ожидания: 5-20 минут
+
+⚠️ Без скриншота доступ не выдается!
+"""
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ]),
+        disable_web_page_preview=True
+    )
+
+@dp.callback_query(F.data.startswith("pay_stars_"))
+async def process_stars_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    
+    final_price = int(tariff['price_stars'] * (1 - discount / 100))
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_stars']} STARS</s> → {final_price} STARS (-{discount}%)\n"
+    else:
+        price_line = f"💰 Цена: {final_price} STARS\n"
+    
+    support = SUPPORT_CONTACT_RU if lang == "ru" else SUPPORT_CONTACT_EN
+    
+    text = LANG[lang]["pay_stars"].format(
+        name=name,
+        duration=duration,
+        price_line=price_line,
+        final=final_price,
+        support=support
+    )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ]),
+        disable_web_page_preview=True
+    )
+
+@dp.callback_query(F.data.startswith("pay_crypto_"))
+async def process_crypto_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    await state.update_data(discount=discount, current_tariff=tariff_key)
+    
+    lang = await get_lang(state)
+    
+    text = LANG[lang]["pay_crypto_choose"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_crypto_currency_keyboard(tariff_key, discount, lang)
+    )
+
+@dp.callback_query(F.data.startswith("crypto_usdt_"))
+async def crypto_usdt_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    final_usdt = round_to_half(final_rub / USDT_RATE)
+    
+    invoice_data = await create_crypto_invoice(final_usdt, user_id, tariff_key, "USDT")
+    
+    if invoice_data and "error" not in invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_usdt, "USDT")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        error_msg = invoice_data.get("error", LANG[lang]["crypto_error"]) if invoice_data else LANG[lang]["crypto_error"]
+        await callback.message.edit_text(
+            f"❌ {error_msg}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_ton_"))
+async def crypto_ton_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    final_usd = round_to_half(final_rub / USD_RATE)
+    final_ton = round_to_half(final_usd / GRAM_RATE)
+    
+    invoice_data = await create_crypto_invoice(final_ton, user_id, tariff_key, "TON")
+    
+    if invoice_data and "error" not in invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_ton, "TON")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        error_msg = invoice_data.get("error", LANG[lang]["crypto_error"]) if invoice_data else LANG[lang]["crypto_error"]
+        await callback.message.edit_text(
+            f"❌ {error_msg}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_btc_"))
+async def crypto_btc_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    tariff = TARIFFS[tariff_key]
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    final_rub = int(tariff['price_rub'] * (1 - discount / 100))
+    final_usd = round_to_half(final_rub / USD_RATE)
+    final_btc = round(final_usd / BTC_RATE, 8)
+    
+    invoice_data = await create_crypto_invoice(final_btc, user_id, tariff_key, "BTC")
+    
+    if invoice_data and "error" not in invoice_data:
+        invoice_id = invoice_data["invoice_id"]
+        pay_url = invoice_data["pay_url"]
+        
+        save_crypto_invoice(invoice_id, user_id, tariff_key, final_btc, "BTC")
+        
+        text = LANG[lang]["pay_crypto_invoice"]
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_pay_now"], url=pay_url)],
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+    else:
+        error_msg = invoice_data.get("error", LANG[lang]["crypto_error"]) if invoice_data else LANG[lang]["crypto_error"]
+        await callback.message.edit_text(
+            f"❌ {error_msg}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            ])
+        )
+
+@dp.callback_query(F.data.startswith("crypto_direct_"))
+async def crypto_direct_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    lang = await get_lang(state)
+    
+    text = LANG[lang]["crypto_direct"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+        ])
+    )
+
+@dp.callback_query(F.data.startswith("i_paid_"))
+async def i_paid(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    tariff_key = parts[2]
+    discount = int(parts[3]) if len(parts) > 3 else 0
+    
+    lang = await get_lang(state)
+    await state.update_data(current_tariff=tariff_key, discount=discount)
+    
+    text = LANG[lang]["i_paid_confirm"]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=LANG[lang]["btn_cancel"], callback_data=f"cancel_payment_{tariff_key}")]
+        ])
+    )
+    await state.set_state(PaymentStates.waiting_for_receipt)
+
+@dp.message(PaymentStates.waiting_for_receipt, F.photo | F.document | F.video)
+async def process_receipt(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    username = message.from_user.username or "без username"
+    data = await state.get_data()
+    tariff_key = data.get("current_tariff")
+    lang = await get_lang(state)
+    
+    if not tariff_key or tariff_key not in TARIFFS:
+        await state.clear()
+        await message.answer("❌ Ошибка. Попробуйте выбрать тариф заново.")
+        return
+    
+    tariff = TARIFFS[tariff_key]
+    discount = data.get("discount", 0)
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
+    
+    media_file_id = None
+    media_type = None
+    message_text = message.caption or ""
+    
+    if message.photo:
+        media_file_id = message.photo[-1].file_id
+        media_type = "photo"
+    elif message.video:
+        media_file_id = message.video.file_id
+        media_type = "video"
+    elif message.document:
+        media_file_id = message.document.file_id
+        media_type = "document"
+    
+    request_id = add_payment_request(user_id, username, tariff_key, final_price, message_text, media_file_id, media_type)
+    
+    if not request_id:
+        await message.answer("❌ Ошибка сохранения заявки. Попробуйте позже.")
+        await state.clear()
+        return
+    
+    user_link = f"<a href='tg://user?id={user_id}'>{username}</a>"
+    tariff_name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    
+    media_info = ""
+    if media_file_id:
+        media_info = f"📎 <b>Есть вложение:</b> {media_type}"
+    
+    admin_text = LANG[lang]["new_payment_request"].format(
+        user_link=user_link,
+        user_id=user_id,
+        tariff_name=tariff_name,
+        amount=final_price,
+        message_text=message_text or "Нет сообщения",
+        media_info=media_info
+    )
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            if media_file_id and media_type == "photo":
+                await bot.send_photo(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif media_file_id and media_type == "video":
+                await bot.send_video(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif media_file_id and media_type == "document":
+                await bot.send_document(admin_id, media_file_id, caption=admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            else:
+                await bot.send_message(admin_id, admin_text, reply_markup=get_payment_request_keyboard(request_id, lang))
+        except Exception as e:
+            logging.error(f"Ошибка отправки заявки админу {admin_id}: {e}")
+    
+    await message.answer(LANG[lang]["payment_receipt_received"])
+    await state.clear()
+
+@dp.message(PaymentStates.waiting_for_receipt)
+async def process_receipt_invalid(message: Message, state: FSMContext):
+    lang = await get_lang(state)
+    await message.answer("❌ Пожалуйста, отправьте ЧЕК в виде фото или скриншота (не документом!).")
+
+@dp.callback_query(F.data.startswith("cancel_payment_"))
+async def cancel_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("cancel_payment_", "")
+    
+    if tariff_key not in TARIFFS:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    
+    lang = await get_lang(state)
+    await state.clear()
+    await callback.message.delete()
+    
+    tariff = TARIFFS[tariff_key]
+    data = await state.get_data()
+    discount = data.get("discount", 0)
+    user_id = callback.from_user.id
+    
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
+    desc = tariff['desc_ru'] if lang == "ru" else tariff['desc_en']
+
+    if tariff['price_rub'] == 0:
+        price_text = "БЕСПЛАТНО 🎉"
+    elif discount > 0:
+        new_price = int(tariff['price_rub'] * (1 - discount / 100))
+        price_text = f"<s>{tariff['price_rub']} RUB</s> -> {new_price} RUB <b>(-{discount}%)</b>"
+    else:
+        price_text = f"{tariff['price_rub']} RUB"
+
+    is_paid = get_subscription_by_tariff(user_id, tariff_key) is not None
+    
+    if is_paid:
+        text = LANG[lang]["tariff_desc_paid"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    else:
+        text = LANG[lang]["tariff_desc"].format(
+            name=name,
+            price_text=price_text,
+            duration=duration,
+            desc=desc
+        )
+    
+    await callback.message.answer(text, reply_markup=get_tariff_details_keyboard(tariff_key, lang, user_id))
+
+@dp.callback_query(F.data.startswith("access_"))
+async def access_subscription(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    tariff_key = callback.data.replace("access_", "")
+    lang = await get_lang(state)
+    user_id = callback.from_user.id
+    
+    sub = get_subscription_by_tariff(user_id, tariff_key)
+    if not sub:
+        await callback.message.edit_text("❌ У вас нет активной подписки на этот тариф.")
+        return
+    
+    tariff_channel = get_tariff_channel(tariff_key)
+    
+    if not tariff_channel or tariff_channel.get('channel_id') == "0" or tariff_channel.get('invite_link') == "0":
+        text = "❌ <b>Канал временно не доступен либо забанен.</b>\n\n"
+        text += "Для уточнения сроков восстановления, напишите админу @kasgd\n\n"
+        text += "❕ Важно: когда админ починит доступ, у вас он автоматически появится."
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
+                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
+                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
+            ])
+        )
+        return
+    
+    if tariff_channel and tariff_channel.get('invite_link'):
+        text = "✅ <b>Вход открыт.</b>\n\nНажмите на кнопку ВСТУПИТЬ, затем Подать заявку и снова ВСТУПИТЬ:"
+        invite_link = tariff_channel['invite_link']
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔗 ВСТУПИТЬ", url=invite_link)],
+                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
+                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
+            ])
+        )
+    else:
+        await callback.message.edit_text("❌ Для этого тарифа еще не настроена ссылка на канал. Обратитесь к администратору.")
+
+# ==================================================
+# АДМИН: ЗАЯВКИ НА ОПЛАТУ
+# ==================================================
+
+@dp.callback_query(F.data == "admin_payment_requests")
+async def admin_payment_requests(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, user_id, username, tariff_key, amount, created_at, status FROM payment_requests ORDER BY created_at DESC LIMIT 20')
+    requests = cursor.fetchall()
+    conn.close()
+    
+    if not requests:
+        await callback.message.edit_text("📋 <b>Заявки на оплату</b>\n\nНет заявок на проверку.", reply_markup=get_admin_keyboard())
+        await callback.answer()
+        return
+    
+    text = "📋 <b>Последние заявки на оплату</b>\n\n"
+    for req in requests:
+        status_emoji = "⏳" if req[6] == "pending" else "✅" if req[6] == "confirmed" else "❌"
+        text += f"{status_emoji} #{req[0]} | Пользователь: {req[2]} | {req[4]} RUB | {req[5]}\n"
+    
+    text += "\nДля просмотра заявки нажмите /view_request <номер>"
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
+    await callback.answer()
+
+@dp.message(Command("view_request"))
+async def view_request(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    try:
+        request_id = int(message.text.split()[1])
+    except:
+        await message.answer("❌ Использование: /view_request <id>")
+        return
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM payment_requests WHERE id = ?', (request_id,))
+    req = cursor.fetchone()
+    conn.close()
+    
+    if not req:
+        await message.answer("❌ Заявка не найдена.")
+        return
+    
+    lang = await get_lang(message)
+    tariff_name = TARIFFS.get(req[3], {}).get('name_ru', req[3])
+    
+    text = f"""
+📋 <b>Заявка #{req[0]}</b>
+
+👤 Пользователь: <a href='tg://user?id={req[1]}'>{req[2]}</a>
+🆔 ID: <code>{req[1]}</code>
+📋 Тариф: {tariff_name}
+💰 Сумма: {req[4]} RUB
+📝 Сообщение: {req[5] or "Нет"}
+📎 Медиа: {req[7] or "Нет"}
+📅 Создана: {req[8]}
+📊 Статус: {req[6]}
+"""
+    
+    if req[7]:
+        try:
+            if req[7] == "photo":
+                await bot.send_photo(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif req[7] == "video":
+                await bot.send_video(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            elif req[7] == "document":
+                await bot.send_document(message.chat.id, req[6], caption=text, reply_markup=get_payment_request_keyboard(request_id, lang))
+            else:
+                await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+        except Exception as e:
+            await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+    else:
+        await message.answer(text, reply_markup=get_payment_request_keyboard(request_id, lang))
+
+@dp.callback_query(F.data.startswith("write_user_"))
+async def write_user(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("write_user_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    user_id = req[1]
+    username = req[2]
+    
+    try:
+        await bot.send_message(user_id, "👋 Администратор свяжется с вами лично в ближайшее время.")
+        await callback.answer(f"✅ Открыт чат с пользователем {username}", show_alert=True)
+        await callback.message.answer(f"✍️ Напишите пользователю: <a href='tg://user?id={user_id}'>{username}</a>")
+    except Exception as e:
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+@dp.callback_query(F.data.startswith("write_via_bot_"))
+async def write_via_bot(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("write_via_bot_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    await state.update_data(reply_request_id=request_id)
+    await callback.message.answer("✍️ Напишите сообщение, которое будет отправлено пользователю от имени бота:")
+    await state.set_state(AdminReplyStates.waiting_for_reply)
+    await callback.answer()
+
+@dp.message(AdminReplyStates.waiting_for_reply)
+async def process_admin_reply(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Только для админов!")
+        return
+    
+    data = await state.get_data()
+    request_id = data.get("reply_request_id")
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await message.answer("❌ Заявка не найдена.")
+        await state.clear()
+        return
+    
+    user_id = req[1]
+    
+    try:
+        await bot.send_message(user_id, f"📨 <b>Сообщение от администратора:</b>\n\n{message.text}")
+        await message.answer("✅ Сообщение отправлено пользователю!")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка отправки: {e}")
+    
+    await state.clear()
+
+@dp.callback_query(F.data.startswith("confirm_payment_"))
+async def confirm_payment(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    request_id = int(callback.data.replace("confirm_payment_", ""))
+    req = get_payment_request(request_id)
+    
+    if not req:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    user_id = req[1]
+    tariff_key = req[3]
+    
+    add_paid_tariff(user_id, tariff_key)
+    
+    tariff = TARIFFS.get(tariff_key)
+    if tariff and tariff.get('duration_days') is not None:
+        extend_subscription(user_id, tariff_key, tariff['duration_days'])
+    else:
+        add_subscription(user_id, tariff_key, None)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE payment_requests SET status = "confirmed" WHERE id = ?', (request_id,))
+    conn.commit()
+    conn.close()
+    
+    await bot.send_message(
+        user_id, 
+        "✅ <b>Оплата подтверждена!</b>\n\n"
+        "Ваша подписка уже появилась в разделе \"Мои подписки\".\n\n"
+        "Если канал заблокирован, либо доступ не выдается, пишите админу."
+    )
+    
+    await callback.message.delete()
+    await callback.message.answer(f"✅ Оплата по заявке #{request_id} подтверждена! Пользователь уведомлен.")
+    await callback.answer()
+
+@dp.callback_query(F.data == "back_to_admin")
+async def back_to_admin(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("❌ Только для админов!", show_alert=True)
+        return
+    
+    await callback.answer()
+    
+    user_count = get_user_count()
+    stats = get_subscription_stats()
+    
+    text = LANG["ru"]["admin_panel"].format(
+        user_count=user_count,
+        subscriptions_count=stats['total'],
+        expiring_tomorrow=stats['expiring_tomorrow']
+    )
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
 
 # ==================================================
 # ЗАПУСК
@@ -2532,55 +3332,6 @@ async def check_expired_subscriptions():
             logging.error(f"Ошибка в check_expired_subscriptions: {e}")
         
         await asyncio.sleep(43200)
-
-@dp.callback_query(F.data.startswith("access_"))
-async def access_subscription(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    
-    tariff_key = callback.data.replace("access_", "")
-    lang = await get_lang(state)
-    user_id = callback.from_user.id
-    
-    sub = get_subscription_by_tariff(user_id, tariff_key)
-    if not sub:
-        await callback.message.edit_text("❌ У вас нет активной подписки на этот тариф.")
-        return
-    
-    tariff_channel = get_tariff_channel(tariff_key)
-    
-    if not tariff_channel or tariff_channel.get('channel_id') == "0" or tariff_channel.get('invite_link') == "0":
-        text = "❌ <b>Канал временно не доступен либо забанен.</b>\n\n"
-        text += "Для уточнения сроков восстановления, напишите админу @kasgd\n\n"
-        text += "❕ Важно: когда админ починит доступ, у вас он автоматически появится."
-        
-        await callback.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
-                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
-                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
-            ])
-        )
-        return
-    
-    if tariff_channel and tariff_channel.get('invite_link'):
-        text = "✅ <b>Вход открыт.</b>\n\nНажмите на кнопку ВСТУПИТЬ, затем Подать заявку и снова ВСТУПИТЬ:"
-        invite_link = tariff_channel['invite_link']
-        
-        await callback.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 ВСТУПИТЬ", url=invite_link)],
-                [InlineKeyboardButton(text="💳 КУПИТЬ ДРУГОЙ ДОСТУП", callback_data="back_to_prices")],
-                [InlineKeyboardButton(text="👈 НАЗАД", callback_data="back_to_subs")]
-            ])
-        )
-    else:
-        await callback.message.edit_text("❌ Для этого тарифа еще не настроена ссылка на канал. Обратитесь к администратору.")
-
-# ==================================================
-# ЗАПУСК
-# ==================================================
 
 async def main():
     logging.basicConfig(level=logging.INFO)
