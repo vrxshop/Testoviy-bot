@@ -398,20 +398,6 @@ def init_db():
         )
     ''')
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS payment_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            username TEXT,
-            tariff_key TEXT,
-            amount INTEGER,
-            message_text TEXT,
-            media_file_id TEXT,
-            media_type TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
         CREATE TABLE IF NOT EXISTS crypto_invoices (
             invoice_id TEXT PRIMARY KEY,
             user_id INTEGER,
@@ -461,22 +447,6 @@ def is_tariff_paid(user_id: int, tariff_key: str):
     except Exception as e:
         logging.error(f"Ошибка проверки оплаты: {e}")
         return False
-def add_payment_request(user_id: int, username: str, tariff_key: str, amount: int, message_text: str = None, media_file_id: str = None, media_type: str = None):
-    try:
-        response = supabase.table('payment_requests').insert({
-            'user_id': user_id,
-            'username': username,
-            'tariff_key': tariff_key,
-            'amount': amount,
-            'message_text': message_text,
-            'media_file_id': media_file_id,
-            'media_type': media_type,
-            'status': 'pending'
-        }).execute()
-        return response.data[0]['id'] if response.data else None
-    except Exception as e:
-        logging.error(f"❌ Ошибка добавления заявки: {e}")
-        return None
 
 def get_payment_request(request_id: int):
     try:
