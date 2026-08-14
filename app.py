@@ -1,3 +1,4 @@
+import hashlib  # <-- ДОБАВИТЬ в начале файла
 import logging
 import asyncio
 import os
@@ -1116,14 +1117,24 @@ async def save_payment_and_send_link(message: Message, tariff_key: str, lang: st
 
 async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, asset: str = "USDT") -> dict:
     if not CRYPTOBOT_API_KEY:
-        logging.error("CRYPTOBOT_API_KEY не задан!")
-        return None
+        logging.error("❌ CRYPTOBOT_API_KEY не задан!")
+        # Возвращаем понятную ошибку вместо None
+        return {"error": "CRYPTO_TOKEN не настроен. Обратитесь к администратору."}
     
     url = CRYPTOBOT_API_URL + "createInvoice"
     headers = {
         "Crypto-Pay-API-Token": CRYPTOBOT_API_KEY,
         "Content-Type": "application/json"
     }
+    
+    # Конвертация суммы для разных валют
+    if asset == "USDT":
+        amount = float(amount)
+    elif asset == "TON":
+        amount = float(amount) * 0.00015  # Примерный курс
+    elif asset == "BTC":
+        amount = float(amount) * 0.00000015  # Примерный курс
+    
     payload = {
         "asset": asset,
         "amount": str(amount),
@@ -1152,13 +1163,13 @@ async def create_crypto_invoice(amount: float, user_id: int, tariff_key: str, as
                         }
                     else:
                         logging.error(f"❌ CryptoBot ошибка: {data}")
-                        return None
+                        return {"error": f"Ошибка CryptoBot: {data.get('error', 'Неизвестная ошибка')}"}
                 else:
                     logging.error(f"❌ HTTP ошибка: {response.status}, {response_text}")
-                    return None
+                    return {"error": f"HTTP ошибка: {response.status}"}
     except Exception as e:
         logging.error(f"❌ Ошибка при создании счета: {e}")
-        return None
+        return {"error": str(e)}
 
 async def send_crypto_success(user_id: int, tariff_key: str, amount: float):
     """Выдает доступ после криптоплатежа и начисляет реферальные"""
@@ -1401,15 +1412,21 @@ async def cmd_start(message: Message, state: FSMContext):
     
     logging.info(f"🚀 Получена команда /start от {user_id} ({first_name})")
     
-    # Проверяем, есть ли пользователь
-    existing = supabase.table('users').select('user_id').eq('user_id', user_id).execute()
-    
-    # Обработка реферальной ссылки
+    # ПРАВИЛЬНАЯ ОБРАБОТКА ПАРАМЕТРОВ
     ref_code = None
     if message.text and " " in message.text:
         parts = message.text.split(maxsplit=1)
-        if len(parts) > 1 and parts[1].startswith("ref_"):
-            ref_code = parts[1].replace("ref_", "")
+        if len(parts) > 1:
+            param = parts[1]
+            # Проверяем ref_XXXXX
+            if param.startswith("ref_"):
+                ref_code = param.replace("ref_", "")
+            else:
+                # Это может быть ключ активации
+                key_data = get_subscription_key(param)
+                if key_data:
+                    await process_key_activation(message, param, state)
+                    return
     
     # Добавляем пользователя
     add_user(user_id, first_name, username)
@@ -1418,31 +1435,26 @@ async def cmd_start(message: Message, state: FSMContext):
     if ref_code:
         referrer_id = get_referrer_by_code(ref_code)
         if referrer_id and referrer_id != user_id:
-            supabase.table('users')\
-                .update({'ref_by': referrer_id})\
+            # Проверяем, не был ли уже назначен реферер
+            user_check = supabase.table('users')\
+                .select('ref_by')\
                 .eq('user_id', user_id)\
                 .execute()
             
-            await message.answer(
-                f"🎉 Вас пригласил пользователь!\n"
-                f"Вы получите доступ к боту, а ваш пригласитель получит 55% от ваших покупок."
-            )
-        else:
-            await message.answer("❌ Неверная реферальная ссылка.")
+            if user_check.data and not user_check.data[0].get('ref_by'):
+                supabase.table('users')\
+                    .update({'ref_by': referrer_id})\
+                    .eq('user_id', user_id)\
+                    .execute()
+                
+                await message.answer(
+                    f"🎉 Вас пригласил пользователь!\n"
+                    f"Вы получите доступ к боту, а ваш пригласитель получит 55% от ваших покупок."
+                )
+            else:
+                await message.answer("❌ Неверная реферальная ссылка.")
     
     await state.update_data(discount=0)
-    
-    # Обработка ключа (если есть)
-    if message.text and " " in message.text:
-        parts = message.text.split(maxsplit=1)
-        if len(parts) > 1 and not parts[1].startswith("ref_"):
-            key_param = parts[1]
-            key_data = get_subscription_key(key_param)
-            if key_data:
-                await process_key_activation(message, key_param, state)
-                return
-            else:
-                await message.answer("❌ Такого ключа не существует или он истек.")
     
     lang = await get_lang(state)
     
