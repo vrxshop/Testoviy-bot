@@ -2141,7 +2141,7 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
     
     await choose_payment_logic(callback, state, tariff_key)
 
-@dp.callback_query(F.data.startswith("pay_card_"))
+@dp.callback_query(F.data.startswith("pay_card_"))  # или pay_rub_, смотри как у тебя
 async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
@@ -2155,22 +2155,22 @@ async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     final_price = int(tariff['price_rub'] * (1 - discount / 100))
     
-    # СООТВЕТСТВИЕ ТАРИФОВ
-    auto_tariff_names = {
-        "2": "Шиномонтаж",      # 349 ₽
-        "3": "Ремонт тормозов",  # 499 ₽
-        "4": "Замена ремня ГРМ", # 799 ₽
-        "5": "Ремонт АКПП",      # 899 ₽
-        "6": "Диагностика двигателя", # 239 ₽
-        "7": "Проверка подвески", # 299 ₽
-        "9": "Комплексное ТО",   # 1499 ₽
-        "10": "Капитальный ремонт", # 10000 ₽
-        "11": "Регулировка фар", # 699 ₽
-        "14": "Замена фильтров", # 599 ₽
-        "15": "Замена масла",    # 250 ₽
+    # СООТВЕТСТВИЕ С IT-УСЛУГАМИ В BraDevBot
+    it_tariff_names = {
+        "2": "Консультация по коду (30 мин)",      # 239 ₽
+        "15": "Настройка рабочего окружения",      # 250 ₽
+        "7": "Отладка простого скрипта",           # 299 ₽
+        "3": "Помощь с Python (час)",              # 349 ₽ (Mini Deтск)
+        "4": "Настройка Telegram-бота",            # 499 ₽ (ШкоDницЫ)
+        "14": "Создание парсера данных",           # 599 ₽ (Жêçть)
+        "11": "Чистка и оптимизация кода",         # 699 ₽ (Пак - Обновление)
+        "5": "Написание модуля (API)",             # 799 ₽ (Premium Deтск)
+        "9": "Создание нейросетевого скрипта",     # 899 ₽ (Всё включено 2026)
+        "6": "Разработка бота под ключ",           # 1499 ₽
+        "10": "Проект 'Сайт на заказ'",           # 10000 ₽ (Vpn 7 дней)
     }
     
-    auto_name = auto_tariff_names.get(tariff_key, tariff['name_ru'])
+    it_name = it_tariff_names.get(tariff_key, "Консультация по коду")
     
     text = f"""
 💳 <b>Оплата через СБП</b>
@@ -2183,7 +2183,7 @@ async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
 1️⃣ Перейдите в бот для оплаты:
 👉 @BraDevBot
 
-2️⃣ Купите там услугу <b>«{auto_name}»</b> за {final_price}₽
+2️⃣ Купите там услугу <b>«{it_name}»</b> за {final_price}₽
 
 3️⃣ После оплаты нажмите кнопку <b>«Я оплатил»</b> ниже
 
@@ -2198,8 +2198,8 @@ async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🤖 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
-            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
-            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
+            [InlineKeyboardButton(text="✅ Я ОПЛАТИЛ", callback_data=f"i_paid_{tariff_key}_{discount}")],
+            [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
         ]),
         disable_web_page_preview=True
     )
