@@ -706,7 +706,6 @@ TARIFFS = {
         "price_stars": 349,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "Вы получите доступ к следующим ресурсам:\n• H2 (канал)\n\n❗️ После покупки вы попадете в приватный канал со сливом девушек\n\n✅ Что в канале? П0pнo девок 13-19, а так-же слив и их разводом на фото, видео и \"беседы\" в скайпе, иногда ссылками на соц сети и Некоторых особых шкур есть номера и страницы вк\n\n❓Уровень? В основном 14-20, но встречаются и до 14 Вo3pacT\n\n✅ Помимо канала прилагается еще немного архивов с шкурками"
     },
@@ -717,7 +716,6 @@ TARIFFS = {
         "price_stars": 499,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "Это мини пак с огромным количеством небольших видео\n\n❗️ После покyпки вы попадете в привaтный kaнал с de**ским пopno довольно таки жectkиm.\n\n✅ Уровень? i1-i12 вo3PacT, ceks, изnocuловаnие, инцceT, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб"
     },
@@ -728,7 +726,6 @@ TARIFFS = {
         "price_stars": 799,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "❗️ После покупки вы попадете в приватный канал с цe**льным пpоцe**poм пopno\n\n✅ Большой сборник из мега подборки пopно ваших любимых шкoльниц возрастом от 12 до 17 🔥 , есть изnocuлование, инцceT, много сливов с впиcoк и просто cлив шkyp, скрытые камеры шkoльниц/стyдeнток и ceксoм, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб этой категории.\n\nКонтента очень много"
     },
@@ -739,7 +736,6 @@ TARIFFS = {
         "price_stars": 899,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "❗️ После покyпки вы попадете в привaтный kaнал с de**ским пopno довольно таки жectkиm.\n\n✅ Уровень? i1-i12 вo3PacT, ceks, изnocuловаnие, инцceT, ласкает себя и т.д.\n\n✅ Помимо видео прилагается еще архивы с множеством гб\n\nКонтента очень много"
     },
@@ -750,7 +746,6 @@ TARIFFS = {
         "price_stars": 239,
         "duration_ru": "2 месяца",
         "duration_en": "2 months",
-        "duration_days": 60,
         "category": "main",
         "desc_ru": "Канал с зоо контентом"
     },
@@ -761,7 +756,6 @@ TARIFFS = {
         "price_stars": 299,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "Вы получите доступ к следующим ресурсам:\n• Gg (канал)\n\n❗️ После покупки вы попадете в приватный канал с м+м\n\n✅ Уровень? Есть до 12, но в основном видео 12-17, есть немного изnocuлование, инцceT, скрытые камеры шkoльнов/стyдeнтов и конечно основное же ceкс и минет\n\n✅ Помимо видео прилагается еще дополнительный архив."
     },
@@ -772,7 +766,6 @@ TARIFFS = {
         "price_stars": 1499,
         "duration_ru": "Бессрочно",
         "duration_en": "Forever",
-        "duration_days": None,
         "category": "main",
         "desc_ru": "❗️Вы получите доступ сразу в 10 наших каналов при этом их подписка останется у вас НАВСЕГДА! А выйдет гораздо дешевле чем покупать по отдельности.\n\n🔥 Кoнтeнтa у вас выйдет очень МНОГО\n\n+ Бонусные каналы к тарифу"
     },
@@ -783,7 +776,6 @@ TARIFFS = {
         "price_stars": 10000,
         "duration_ru": "1 день",
         "duration_en": "1 day",
-        "duration_days": 1,
         "category": "main",
         "desc_ru": "Не покупать, читайте описание.\n\n✅ Хороший VPN для обхода белых списков.\n\nПереходим по ссылке:\nhttps://t.me/velvet_vpn_bot?start=sYzcRbjU\n\nВам дают 2 дня бесплатного доступа, а также вводим ещё 2 секретных промокода на 7 дней:\n\nWELCOME_BACK\nJUSTTRY"
     },
@@ -794,7 +786,6 @@ TARIFFS = {
         "price_stars": 699,
         "duration_ru": "21 дней",
         "duration_en": "21 days",
-        "duration_days": 21,
         "category": "paki",
         "desc_ru": "Cливaeм ccлыky дpyгиx кaнaлoв, peкoмeндyeм пoкyпaть пocлe пpocмoтpa дpyгиx тapифoв\n\nЕдинственный пак который не входит во всё включено"
     },
@@ -805,7 +796,6 @@ TARIFFS = {
         "price_stars": 599,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "paki",
         "desc_ru": "Bы пoлyчитe дocтyп k cлeдyющим pecypcaм:\n• Жecть (kaнaл)\n\n❗️ Пocлe пoкyпkи вы пoпaдeтe в пpивaтный kaнaл c caмым жecтkим koнтeнтoм, чтo ecть в интepнeтe.\n\n❓Уpoвeнь? 14-20 лeт, кpoвь, yнижeния, бoль, экcтpим, мясo, гpyппoвyшkи, инцecT — вce caмoe жecтkoe."
     },
@@ -816,7 +806,6 @@ TARIFFS = {
         "price_stars": 250,
         "duration_ru": "1 месяц",
         "duration_en": "1 month",
-        "duration_days": 30,
         "category": "main",
         "desc_ru": "Описание будет позже"
     }
@@ -2141,8 +2130,8 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
     
     await choose_payment_logic(callback, state, tariff_key)
 
-@dp.callback_query(F.data.startswith("pay_card_"))  # или pay_rub_, смотри как у тебя
-async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("pay_card_"))
+async def process_card_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     parts = callback.data.split("_")
@@ -2155,41 +2144,35 @@ async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
     tariff = TARIFFS[tariff_key]
     final_price = int(tariff['price_rub'] * (1 - discount / 100))
     
-    # СООТВЕТСТВИЕ С IT-УСЛУГАМИ В BraDevBot
-    it_tariff_names = {
-        "2": "Консультация по коду (30 мин)",      # 239 ₽
-        "15": "Настройка рабочего окружения",      # 250 ₽
-        "7": "Отладка простого скрипта",           # 299 ₽
-        "3": "Помощь с Python (час)",              # 349 ₽ (Mini Deтск)
-        "4": "Настройка Telegram-бота",            # 499 ₽ (ШкоDницЫ)
-        "14": "Создание парсера данных",           # 599 ₽ (Жêçть)
-        "11": "Чистка и оптимизация кода",         # 699 ₽ (Пак - Обновление)
-        "5": "Написание модуля (API)",             # 799 ₽ (Premium Deтск)
-        "9": "Создание нейросетевого скрипта",     # 899 ₽ (Всё включено 2026)
-        "6": "Разработка бота под ключ",           # 1499 ₽
-        "10": "Проект 'Сайт на заказ'",           # 10000 ₽ (Vpn 7 дней)
-    }
+    name = tariff['name_ru'] if lang == "ru" else tariff['name_en']
+    duration = tariff['duration_ru'] if lang == "ru" else tariff['duration_en']
     
-    it_name = it_tariff_names.get(tariff_key, "Консультация по коду")
+    if discount > 0:
+        price_line = f"💰 Цена: <s>{tariff['price_rub']} RUB</s> → {final_price} RUB (-{discount}%)\n"
+    else:
+        price_line = f"💰 Цена: {final_price} RUB\n"
     
     text = f"""
 💳 <b>Оплата через СБП</b>
 
-📋 <b>{tariff['name_ru']}</b>
-💰 Сумма: {final_price} ₽
+📋 <b>{name}</b>
+📅 Срок: {duration}
+{price_line}
 
 📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
 
 1️⃣ Перейдите в бот для оплаты:
 👉 @BraDevBot
 
-2️⃣ Купите там услугу <b>«{it_name}»</b> за {final_price}₽
+2️⃣ Купите там услугу <b>«{name}»</b> за {final_price}₽
 
-3️⃣ После оплаты нажмите кнопку <b>«Я оплатил»</b> ниже
+3️⃣ После оплаты сделайте скриншот чека
 
-4️⃣ Отправьте скриншот чека
+4️⃣ Отправьте скриншот @kasgd
 
-5️⃣ Дождитесь подтверждения (5-20 минут)
+5️⃣ Укажите название тарифа
+
+⏰ Время ожидания: 5-20 минут
 
 ⚠️ Без скриншота доступ не выдается!
 """
@@ -2197,9 +2180,9 @@ async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🤖 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
-            [InlineKeyboardButton(text="✅ Я ОПЛАТИЛ", callback_data=f"i_paid_{tariff_key}_{discount}")],
-            [InlineKeyboardButton(text="👈 Назад", callback_data="back_to_prices")]
+            [InlineKeyboardButton(text="🚀 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
+            [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ]),
         disable_web_page_preview=True
     )
