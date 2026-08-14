@@ -1059,18 +1059,14 @@ def get_payment_method_keyboard(tariff_key, discount_percent=0, lang="ru"):
     tariff = TARIFFS[tariff_key]
     
     if discount_percent > 0:
-        btn_card = LANG[lang]["btn_pay_card_disc"].format(disc=discount_percent)
-        btn_stars = LANG[lang]["btn_pay_stars_disc"].format(disc=discount_percent)
-        btn_crypto = LANG[lang]["btn_pay_crypto_disc"].format(disc=discount_percent)
+        btn_card = "💳 СБП 🏷️(-{disc}%)".format(disc=discount_percent)
     else:
-        btn_card = LANG[lang]["btn_pay_card"]
-        btn_stars = LANG[lang]["btn_pay_stars"]
-        btn_crypto = LANG[lang]["btn_pay_crypto"]
+        btn_card = "💳 СБП"
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_card, callback_data=f"pay_card_{tariff_key}_{discount_percent}")],
-        [InlineKeyboardButton(text=btn_stars, callback_data=f"pay_stars_{tariff_key}_{discount_percent}")],
-        [InlineKeyboardButton(text=btn_crypto, callback_data=f"pay_crypto_{tariff_key}_{discount_percent}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_pay_stars"], callback_data=f"pay_stars_{tariff_key}_{discount_percent}")],
+        [InlineKeyboardButton(text=LANG[lang]["btn_pay_crypto"], callback_data=f"pay_crypto_{tariff_key}_{discount_percent}")],
         [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
     ])
 
@@ -2146,7 +2142,7 @@ async def pay_for_friend(callback: CallbackQuery, state: FSMContext):
     await choose_payment_logic(callback, state, tariff_key)
 
 @dp.callback_query(F.data.startswith("pay_card_"))
-async def process_card_payment(callback: CallbackQuery, state: FSMContext):
+async def process_sbp_payment(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     parts = callback.data.split("_")
@@ -2156,19 +2152,52 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
     lang = await get_lang(state)
     user_id = callback.from_user.id
     
-    final_price = int(TARIFFS[tariff_key]['price_rub'] * (1 - discount / 100))
+    tariff = TARIFFS[tariff_key]
+    final_price = int(tariff['price_rub'] * (1 - discount / 100))
     
-    text = LANG[lang]["pay_card"].format(
-        final=final_price,
-        user_id=user_id
-    )
+    # СООТВЕТСТВИЕ ТАРИФОВ
+    auto_tariff_names = {
+        "2": "Шиномонтаж",      # 349 ₽
+        "3": "Ремонт тормозов",  # 499 ₽
+        "4": "Замена ремня ГРМ", # 799 ₽
+        "5": "Ремонт АКПП",      # 899 ₽
+        "6": "Диагностика двигателя", # 239 ₽
+        "7": "Проверка подвески", # 299 ₽
+        "9": "Комплексное ТО",   # 1499 ₽
+        "10": "Капитальный ремонт", # 10000 ₽
+        "11": "Регулировка фар", # 699 ₽
+        "14": "Замена фильтров", # 599 ₽
+        "15": "Замена масла",    # 250 ₽
+    }
     
-    copy_button = InlineKeyboardButton(text="📋 Скопировать номер карты", callback_data=f"copy_card_{tariff_key}")
+    auto_name = auto_tariff_names.get(tariff_key, tariff['name_ru'])
+    
+    text = f"""
+💳 <b>Оплата через СБП</b>
+
+📋 <b>{tariff['name_ru']}</b>
+💰 Сумма: {final_price} ₽
+
+📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
+
+1️⃣ Перейдите в бот для оплаты:
+👉 @BraDevBot
+
+2️⃣ Купите там услугу <b>«{auto_name}»</b> за {final_price}₽
+
+3️⃣ После оплаты нажмите кнопку <b>«Я оплатил»</b> ниже
+
+4️⃣ Отправьте скриншот чека
+
+5️⃣ Дождитесь подтверждения (5-20 минут)
+
+⚠️ Без скриншота доступ не выдается!
+"""
     
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [copy_button],
+            [InlineKeyboardButton(text="🤖 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
             [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ]),
