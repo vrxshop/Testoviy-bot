@@ -73,6 +73,62 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 logging.info("✅ Supabase REST API подключен")
 
 # ==================================================
+# ЗАЯВКИ НА ОПЛАТУ (SUPABASE)
+# ==================================================
+
+def add_payment_request(user_id: int, username: str, tariff_key: str, amount: int, message_text: str = None, media_file_id: str = None, media_type: str = None):
+    try:
+        response = supabase.table('payment_requests').insert({
+            'user_id': user_id,
+            'username': username,
+            'tariff_key': tariff_key,
+            'amount': amount,
+            'message_text': message_text,
+            'media_file_id': media_file_id,
+            'media_type': media_type,
+            'status': 'pending'
+        }).execute()
+        logging.info(f"✅ Заявка сохранена в Supabase: {response.data}")
+        return response.data[0]['id'] if response.data else None
+    except Exception as e:
+        logging.error(f"❌ Ошибка сохранения заявки в Supabase: {e}")
+        return None
+
+def get_payment_request(request_id: int):
+    try:
+        response = supabase.table('payment_requests')\
+            .select('*')\
+            .eq('id', request_id)\
+            .execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logging.error(f"❌ Ошибка получения заявки: {e}")
+        return None
+
+def update_payment_request_status(request_id: int, status: str):
+    try:
+        supabase.table('payment_requests')\
+            .update({'status': status})\
+            .eq('id', request_id)\
+            .execute()
+        return True
+    except Exception as e:
+        logging.error(f"❌ Ошибка обновления заявки: {e}")
+        return False
+
+def get_all_payment_requests(limit=20):
+    try:
+        response = supabase.table('payment_requests')\
+            .select('*')\
+            .order('created_at', desc=True)\
+            .limit(limit)\
+            .execute()
+        return response.data
+    except Exception as e:
+        logging.error(f"❌ Ошибка получения заявок: {e}")
+        return []
+
+# ==================================================
 # ФУНКЦИИ РАБОТЫ С БАЗОЙ (REST API)
 # ==================================================
 
