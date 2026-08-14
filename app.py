@@ -773,19 +773,6 @@ LANG = {
 
 📌 Вы получаете 55% от каждой покупки вашего реферала.
 💸 Минимальная сумма для вывода: 1000 ₽
-""",
-        "ref_withdraw_success": "✅ Заявка на вывод #{id} создана! Ожидайте подтверждения.",
-        "ref_withdraw_error": "❌ Ошибка создания заявки. Попробуйте позже.",
-        "ref_min_balance": "❌ Минимальная сумма для вывода: 1000 ₽. Ваш баланс: {balance} ₽",
-        "ref_withdraw_admin": """
-🆕 <b>НОВАЯ ЗАЯВКА НА ВЫВОД!</b>
-
-👤 Пользователь: {user}
-🆔 ID: <code>{user_id}</code>
-💰 Сумма: {amount} ₽
-🆔 Заявка: #{id}
-
-/confirm_withdraw {id}
 """
     },
     "en": {
@@ -1014,10 +1001,10 @@ TARIFFS = {
 }
 
 TEST_TARIFF = {
-    "name_ru": "🧪 ТЕСТОВЫЙ тариф (0.001 USDT)",
-    "price_usdt": 0.001,
+    "name_ru": "🧪 ТЕСТОВЫЙ тариф (1 USDT)",
+    "price_usdt": 1,  # <-- БЫЛО 0.001, СТАЛО 1
     "duration_ru": "Тестовый",
-    "desc_ru": "🧪 Тестовый тариф за 0.001 USDT\n\nИспользуется для проверки работы системы."
+    "desc_ru": "🧪 Тестовый тариф за 1 USDT\n\nИспользуется для проверки работы системы."
 }
 
 PROMO_CODES = {
@@ -2133,9 +2120,10 @@ async def show_ref_menu(message: Message, state: FSMContext):
         total=f"{stats['total']:.2f}"
     )
     
-    buttons = []
-    if balance >= 1000:
-        buttons.append([InlineKeyboardButton(text="💸 Запросить вывод", callback_data="withdraw_request")])
+    # КНОПКА ВСЕГДА ВИДНА
+    buttons = [
+        [InlineKeyboardButton(text="💸 Вывести средства", callback_data="withdraw_request")]
+    ]
     
     await message.answer(
         text,
@@ -2150,7 +2138,9 @@ async def withdraw_request(callback: CallbackQuery):
     
     if balance < 1000:
         await callback.answer(
-            LANG["ru"]["ref_min_balance"].format(balance=f"{balance:.2f}"),
+            f"❌ Минимальная сумма для вывода: 1000 ₽\n"
+            f"💰 Ваш баланс: {balance:.2f} ₽\n\n"
+            f"Приглашайте рефералов и зарабатывайте!",
             show_alert=True
         )
         return
@@ -2173,10 +2163,12 @@ async def withdraw_request(callback: CallbackQuery):
                 logging.error(f"Ошибка уведомления админа: {e}")
         
         await callback.message.edit_text(
-            LANG["ru"]["ref_withdraw_success"].format(id=request_id)
+            f"✅ Заявка на вывод #{request_id} создана!\n\n"
+            f"💰 Сумма: {balance:.2f} ₽\n"
+            f"⏳ Ожидайте подтверждения администратора."
         )
     else:
-        await callback.answer(LANG["ru"]["ref_withdraw_error"], show_alert=True)
+        await callback.answer("❌ Ошибка создания заявки. Попробуйте позже.", show_alert=True)
     
     await callback.answer()
 
@@ -2320,11 +2312,11 @@ async def crypto_test677_payment(callback: CallbackQuery, state: FSMContext):
     tariff_key = "test677"
     
     if asset == "USDT":
-        amount = 0.001
+        amount = 1  # <-- БЫЛО 0.001, СТАЛО 1
     elif asset == "TON":
-        amount = 0.00015
+        amount = 0.15  # <-- БЫЛО 0.00015, СТАЛО 0.15
     elif asset == "BTC":
-        amount = 0.00000015
+        amount = 0.000015  # <-- БЫЛО 0.00000015, СТАЛО 0.000015
     else:
         await callback.answer("❌ Неподдерживаемая валюта")
         return
@@ -3233,7 +3225,32 @@ async def confirm_payment(callback: CallbackQuery):
     
     user_id = req[1]
     tariff_key = req[3]
+    amount = req[4]  # сумма в рублях
     
+    # ===== НАЧИСЛЕНИЕ РЕФЕРАЛЬНЫХ =====
+    user_response = supabase.table('users')\
+        .select('ref_by')\
+        .eq('user_id', user_id)\
+        .execute()
+    
+    if user_response.data and user_response.data[0].get('ref_by'):
+        referrer_id = user_response.data[0]['ref_by']
+        ref_amount = amount * 0.55  # 55% от суммы
+        
+        if tariff_key != "test677":  # можно убрать проверку
+            add_ref_earning(user_id, referrer_id, tariff_key, ref_amount)
+            
+            try:
+                await bot.send_message(
+                    referrer_id,
+                    f"💰 Вам начислено {ref_amount:.2f} ₽ за покупку вашего реферала!\n"
+                    f"📋 Тариф: {get_tariff_name(tariff_key, 'ru')}\n"
+                    f"📊 Ваш баланс: {get_ref_balance(referrer_id):.2f} ₽"
+                )
+            except Exception as e:
+                logging.error(f"Ошибка уведомления реферера: {e}")
+    
+    # Выдаем доступ
     add_paid_tariff(user_id, tariff_key)
     
     tariff = TARIFFS.get(tariff_key)
