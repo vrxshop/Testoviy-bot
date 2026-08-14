@@ -2400,38 +2400,6 @@ async def crypto_test677_payment(callback: CallbackQuery, state: FSMContext):
 # - back_to_subs
 # - etc.
 
-@dp.callback_query(F.data == "back_to_prices")
-async def back_to_prices(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.update_data(discount=0)
-    lang = await get_lang(state)
-    await callback.message.edit_text(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
-
-@dp.callback_query(F.data == "show_paki")
-async def show_paki(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    lang = await get_lang(state)
-    await callback.message.edit_text(
-        "📋 <b>Паки</b>\n\nВыберите пак для подробностей:",
-        reply_markup=get_paki_keyboard(lang)
-    )
-
-@dp.callback_query(F.data == "back_to_subs")
-async def back_to_subs(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await state.update_data(discount=0)
-    lang = await get_lang(state)
-    user_id = callback.from_user.id
-    
-    subscriptions = get_active_subscriptions(user_id)
-    
-    if subscriptions:
-        text = "📋 <b>Ваши активные подписки</b>\n\nВыберите доступ:"
-        await callback.message.edit_text(text, reply_markup=get_subscription_keyboard(subscriptions, lang))
-    else:
-        await callback.message.edit_text(LANG[lang]["no_subs"])
-        await callback.message.answer(LANG[lang]["main_menu_text"], reply_markup=get_tariff_keyboard(lang))
-
 @dp.message(F.text.in_([LANG["ru"]["btn_prices"], LANG["en"]["btn_prices"]]))
 async def show_prices(message: Message, state: FSMContext):
     lang = await get_lang(state)
