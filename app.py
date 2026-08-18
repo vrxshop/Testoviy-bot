@@ -2640,26 +2640,14 @@ async def process_card_payment(callback: CallbackQuery, state: FSMContext):
 
 📌 <b>ИНСТРУКЦИЯ ПО ОПЛАТЕ:</b>
 
-1️⃣ Перейдите в бот для оплаты:
-👉 @BraDevBot
-
-2️⃣ Купите там услугу <b>«{name}»</b> за {final_price}₽
-
-3️⃣ После оплаты сделайте скриншот чека
-
-4️⃣ Отправьте скриншот @kasgd
-
-5️⃣ Укажите название тарифа
-
-⏰ Время ожидания: 5-20 минут
-
-⚠️ Без скриншота доступ не выдается!
+Напишите админу @kasgd для оплаты
+(Пишите сразу название тарифа, сумму, и способ оплаты карта либо сбп)
 """
     
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Перейти в бот оплаты", url="https://t.me/BraDevBot")],
+            [InlineKeyboardButton(text="👨‍💼 Написать админу", url="https://t.me/kasgd")],
             [InlineKeyboardButton(text=LANG[lang]["btn_i_paid"], callback_data=f"i_paid_{tariff_key}_{discount}")],
             [InlineKeyboardButton(text=LANG[lang]["btn_back"], callback_data="back_to_prices")]
         ]),
